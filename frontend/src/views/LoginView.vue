@@ -11,7 +11,7 @@ const mode = ref<'options' | 'admin'>('options')
 
 const title = computed(() => (mode.value === 'options' ? 'Masuk' : 'Masuk administrator'))
 const subtitle = computed(() =>
-  mode.value === 'options' ? 'Gunakan akun OneID perusahaan, atau masuk sebagai administrator.' : 'Masukkan email dan kata sandi.',
+  mode.value === 'options' ? 'Gunakan akun APG OneID, atau masuk sebagai administrator.' : 'Masukkan email dan kata sandi.',
 )
 </script>
 
