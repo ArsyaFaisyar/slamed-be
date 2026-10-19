@@ -4,3 +4,6 @@ from app.models.project_prospek import ProjectProspek
 from app.models.rkh import RKH
 from app.models.lkh import LKH
 from app.models.lkh_attachment import LKHAttachment
+from app.models.branch import Branch
+from app.models.area import Area
+from app.models.media_pengadaan import MediaPengadaan
