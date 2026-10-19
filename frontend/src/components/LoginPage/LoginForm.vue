@@ -2,70 +2,94 @@
 import { computed, reactive, ref } from 'vue'
 import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
+import FloatLabel from 'primevue/floatlabel'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
+import CaptchaField from './CaptchaField.vue'
+import type { LoginPayload } from '../../api/auth'
 
-defineProps<{ loading?: boolean }>()
+defineProps<{ loading?: boolean; error?: string }>()
 
-const emit = defineEmits<{
-  submit: [payload: { email: string; password: string }]
-}>()
+const emit = defineEmits<{ submit: [payload: LoginPayload] }>()
 
-const form = reactive({ email: '', password: '' })
+const form = reactive({ username: '', password: '', captchaId: '', captchaAnswer: '' })
 const submitted = ref(false)
-
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const captcha = ref<InstanceType<typeof CaptchaField>>()
 
 const errors = computed(() => {
-  const email = form.email.trim()
+  const answer = form.captchaAnswer.trim()
   return {
-    email: !email ? 'Email wajib diisi' : !emailPattern.test(email) ? 'Format email tidak valid' : '',
+    username: form.username.trim() ? '' : 'Username wajib diisi',
     password: form.password ? '' : 'Kata sandi wajib diisi',
+    captcha: !answer
+      ? 'Jawaban CAPTCHA wajib diisi'
+      : !/^-?\d+$/.test(answer)
+        ? 'Jawaban harus berupa angka'
+        : !form.captchaId
+          ? 'CAPTCHA belum dimuat'
+          : '',
   }
 })
 
 function onSubmit() {
   submitted.value = true
-  if (errors.value.email || errors.value.password) return
-  emit('submit', { email: form.email.trim(), password: form.password })
+  if (errors.value.username || errors.value.password || errors.value.captcha) return
+  emit('submit', {
+    username: form.username.trim(),
+    password: form.password,
+    captcha_id: form.captchaId,
+    captcha_answer: Number(form.captchaAnswer.trim()),
+  })
 }
+
+defineExpose({ refreshCaptcha: () => captcha.value?.refresh() })
 </script>
 
 <template>
   <form class="flex flex-col gap-5" novalidate @submit.prevent="onSubmit">
-    <div class="flex flex-col gap-2">
-      <label for="email" class="text-sm font-medium">Email</label>
-      <InputText
-        id="email"
-        v-model="form.email"
-        type="email"
-        placeholder="nama@email.com"
-        autocomplete="email"
-        fluid
-        :invalid="submitted && !!errors.email"
-      />
-      <Message v-if="submitted && errors.email" severity="error" size="small" variant="simple">
-        {{ errors.email }}
+    <Message v-if="error" severity="error" size="small">{{ error }}</Message>
+
+    <div class="flex flex-col gap-1.5">
+      <FloatLabel variant="on">
+        <InputText
+          id="username"
+          v-model="form.username"
+          autocomplete="username"
+          fluid
+          :invalid="submitted && !!errors.username"
+        />
+        <label for="username">Username</label>
+      </FloatLabel>
+      <Message v-if="submitted && errors.username" severity="error" size="small" variant="simple">
+        {{ errors.username }}
       </Message>
     </div>
 
-    <div class="flex flex-col gap-2">
-      <label for="password" class="text-sm font-medium">Kata sandi</label>
-      <Password
-        v-model="form.password"
-        input-id="password"
-        placeholder="Masukkan kata sandi"
-        toggle-mask
-        :feedback="false"
-        fluid
-        :invalid="submitted && !!errors.password"
-        :input-props="{ autocomplete: 'current-password' }"
-      />
+    <div class="flex flex-col gap-1.5">
+      <FloatLabel variant="on">
+        <Password
+          v-model="form.password"
+          input-id="password"
+          toggle-mask
+          fluid
+          :feedback="false"
+          :invalid="submitted && !!errors.password"
+          :input-props="{ autocomplete: 'current-password' }"
+        />
+        <label for="password">Kata sandi</label>
+      </FloatLabel>
       <Message v-if="submitted && errors.password" severity="error" size="small" variant="simple">
         {{ errors.password }}
       </Message>
     </div>
 
-    <Button type="submit" label="Masuk" fluid :loading="loading" />
+    <CaptchaField
+      ref="captcha"
+      v-model:captcha-id="form.captchaId"
+      v-model:answer="form.captchaAnswer"
+      :error="submitted ? errors.captcha : ''"
+    />
+
+    <Button type="submit" label="Masuk" icon="pi pi-sign-in" fluid :loading="loading" />
   </form>
 </template>

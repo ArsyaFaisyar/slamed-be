@@ -49,6 +49,8 @@ DEMO_USERS = [
     {
         "nama": "Keuangan Demo",
         "username": "keuangan01",
+        "email": "keuangan01@demo.com",
+        "role": "ADMIN_KEUANGAN",
     },
 ]
 
