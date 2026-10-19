@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import ThemeToggle from '../components/ThemeToggle.vue'
+import NotificationBell from '../components/NotificationBell.vue'
+import UserMenu from '../components/UserMenu.vue'
 
 defineEmits<{ menu: [] }>()
 
 const route = useRoute()
+const router = useRouter()
+
+function logout() {
+  router.push({ name: 'login' })
+}
 </script>
 
 <template>
@@ -23,6 +30,11 @@ const route = useRoute()
       />
       <h1 class="text-lg font-semibold">{{ route.meta.title }}</h1>
     </div>
-    <ThemeToggle />
+
+    <div class="flex items-center gap-3">
+      <ThemeToggle />
+      <NotificationBell />
+      <UserMenu name="Nama Pengguna" role="Role" @logout="logout" />
+    </div>
   </header>
 </template>
