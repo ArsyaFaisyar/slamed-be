@@ -1,6 +1,9 @@
+
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
 from app.db.database import get_db
 from app.routers.customers import router as customers_router
 from app.routers.projects import router as projects_router
@@ -17,6 +20,17 @@ from app.routers.areas import router as areas_router
 from app.routers.media_pengadaan import router as media_pengadaan_router
 
 app = FastAPI(title="Sales Management System API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(auth_router)
 app.include_router(profile_router)
 app.include_router(user)

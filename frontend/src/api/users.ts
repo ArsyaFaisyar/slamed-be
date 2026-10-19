@@ -1,0 +1,48 @@
+import { http } from "./http";
+import type { UserRole } from "../constant/roles";
+
+export interface User {
+  id: number;
+  nama: string;
+  username: string;
+  email: string;
+  role: string;
+  is_active: number;
+}
+
+export interface CreateUserPayload {
+  nama: string;
+  username: string;
+  email: string;
+  password: string;
+  role: UserRole;
+}
+
+export async function getUsers(): Promise<User[]> {
+  const { data } = await http.get<User[]>("/users/");
+  return data;
+}
+
+export async function createUser(payload: CreateUserPayload): Promise<void> {
+  await http.post("/users/", payload);
+}
+
+
+export async function resetUserPassword(userId: number, password: string): Promise<void> {
+  await http.patch(`/users/${userId}/password`, { password });
+}
+
+
+export interface UpdateUserPayload {
+  nama?: string;
+  email?: string;
+  role?: UserRole;
+  is_active?: boolean;
+}
+
+export async function updateUser(userId: number, payload: UpdateUserPayload): Promise<User> {
+  const { data } = await http.patch<User>(`/users/${userId}`, payload);
+  return data;
+}
+
+
