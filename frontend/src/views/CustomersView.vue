@@ -1,3 +1,4 @@
+
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import InputText from 'primevue/inputtext'
@@ -6,7 +7,6 @@ import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
 
 import CustomerFormDialog, { type SalesOption } from '../components/CustomerPage/CustomerFormDialog.vue'
-
 import { deleteCustomer, getCustomers, type Customer } from '../api/customers'
 import { getUsers, type User } from '../api/users'
 import { getErrorMessage } from '../utils/error'
@@ -19,22 +19,21 @@ const search = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 const actionError = ref('')
-
 const formVisible = ref(false)
 const selectedEdit = ref<Customer | null>(null)
 
 const salesOptions = computed<SalesOption[]>(() =>
   users.value
-    .filter((user) => user.role === 'SALES')
-    .map((user) => ({ value: user.id, label: user.is_active ? user.nama : `${user.nama} (nonaktif)` })),
+    .filter((user) => user.role?.toUpperCase() === 'SALES')
+    .map((user) => ({
+      value: user.id,
+      label: user.is_active ? user.nama : `${user.nama} (nonaktif)`,
+    })),
 )
 
-const salesNames = computed(() => new Map(users.value.map((user) => [user.id, user.nama])))
-
-function salesName(customer: Customer) {
-  if (customer.sales_id === null || customer.sales_id === undefined) return '-'
-  return salesNames.value.get(customer.sales_id) ?? `ID ${customer.sales_id}`
-}
+const salesNames = computed(
+  () => new Map(users.value.map((user) => [user.id, user.nama])),
+)
 
 const filteredCustomers = computed(() => {
   const keyword = search.value.trim().toLowerCase()
@@ -45,13 +44,19 @@ const filteredCustomers = computed(() => {
     [
       customer.nama_instansi,
       customer.nama_pic,
+      customer.kontak_pic,
       customer.kota,
       customer.kategori,
-      customer.area,
+      customer.area_id,
       salesName(customer),
-    ].some((value) => (value ?? '').toLowerCase().includes(keyword)),
+    ].some((value) => String(value ?? '').toLowerCase().includes(keyword)),
   )
 })
+
+function salesName(customer: Customer) {
+  if (customer.sales_id == null) return '-'
+  return salesNames.value.get(customer.sales_id) ?? `ID ${customer.sales_id}`
+}
 
 function openCreate() {
   selectedEdit.value = null
@@ -100,6 +105,7 @@ function confirmDelete(customer: Customer) {
     },
     accept: async () => {
       actionError.value = ''
+
       try {
         await deleteCustomer(customer.id)
         await fetchCustomers()
@@ -132,7 +138,9 @@ onMounted(() => {
       </div>
     </Message>
 
-    <Message v-if="actionError" severity="error" @close="actionError = ''">{{ actionError }}</Message>
+    <Message v-if="actionError" severity="error" @close="actionError = ''">
+      {{ actionError }}
+    </Message>
 
     <section class="rounded-xl border border-line bg-card">
       <div
@@ -140,7 +148,9 @@ onMounted(() => {
       >
         <div>
           <h2 class="font-semibold">Daftar customer</h2>
-          <p class="mt-1 text-sm text-fg-muted">{{ filteredCustomers.length }} customer ditampilkan</p>
+          <p class="mt-1 text-sm text-fg-muted">
+            {{ filteredCustomers.length }} customer ditampilkan
+          </p>
         </div>
 
         <div class="flex items-center gap-2">
@@ -166,7 +176,7 @@ onMounted(() => {
         v-if="loading && customers.length === 0"
         class="flex items-center justify-center gap-3 p-12 text-sm text-fg-muted"
       >
-        <i class="pi pi-spin pi-spinner text-lg" />
+        <i class="pi pi-spin pi-spinner text-lg"></i>
         Memuat daftar customer...
       </div>
 
@@ -174,10 +184,10 @@ onMounted(() => {
         v-else-if="!errorMessage && filteredCustomers.length === 0"
         class="flex flex-col items-center justify-center gap-2 p-12 text-center"
       >
-        <i class="pi pi-users text-3xl text-fg-muted" />
-
-        <p class="font-medium">{{ search ? 'Customer tidak ditemukan' : 'Belum ada customer' }}</p>
-
+        <i class="pi pi-users text-3xl text-fg-muted"></i>
+        <p class="font-medium">
+          {{ search ? 'Customer tidak ditemukan' : 'Belum ada customer' }}
+        </p>
         <p class="text-sm text-fg-muted">
           {{ search ? 'Coba kata kunci lain.' : 'Data customer akan muncul di sini.' }}
         </p>
@@ -195,7 +205,7 @@ onMounted(() => {
               <th class="px-5 py-3 font-medium">Instansi</th>
               <th class="px-5 py-3 font-medium">PIC</th>
               <th class="px-5 py-3 font-medium">Kategori</th>
-              <th class="px-5 py-3 font-medium">Area</th>
+              <th class="px-5 py-3 font-medium">Area ID</th>
               <th class="px-5 py-3 font-medium">Sales</th>
               <th class="px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
@@ -209,20 +219,20 @@ onMounted(() => {
             >
               <td class="px-5 py-4">
                 <p class="font-medium">{{ customer.nama_instansi }}</p>
-                <p v-if="customer.kota" class="text-xs text-fg-muted">{{ customer.kota }}</p>
+                <p v-if="customer.kota" class="text-xs text-fg-muted">
+                  {{ customer.kota }}
+                </p>
               </td>
 
               <td class="px-5 py-4">
                 <p>{{ customer.nama_pic || '-' }}</p>
-                <p v-if="customer.kontak_pic" class="text-xs text-fg-muted">{{ customer.kontak_pic }}</p>
+                <p v-if="customer.kontak_pic" class="text-xs text-fg-muted">
+                  {{ customer.kontak_pic }}
+                </p>
               </td>
 
-              <td class="px-5 py-4">
-                  {{ customer.kategori }}
-              </td>
-
-              <td class="px-5 py-4 text-fg-muted">{{ customer.area || '-' }}</td>
-
+              <td class="px-5 py-4">{{ customer.kategori || '-' }}</td>
+              <td class="px-5 py-4 text-fg-muted">{{ customer.area_id }}</td>
               <td class="px-5 py-4 text-fg-muted">{{ salesName(customer) }}</td>
 
               <td class="px-5 py-4 text-center">
@@ -236,7 +246,6 @@ onMounted(() => {
                     v-tooltip.top="'Edit customer'"
                     @click="openEdit(customer)"
                   />
-
                   <Button
                     icon="pi pi-trash"
                     variant="text"

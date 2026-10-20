@@ -26,6 +26,7 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     role: UserRole | None = None
     is_active: bool | None = None
+    branch_id: Optional[int] = None
 
 
 class UserResponse(BaseModel):

@@ -8,6 +8,7 @@ export interface User {
   email: string;
   role: string;
   is_active: number;
+  branch_id: number | null;
 }
 
 export interface CreateUserPayload {
@@ -16,6 +17,15 @@ export interface CreateUserPayload {
   email: string;
   password: string;
   role: UserRole;
+  branch_id: number | null;
+}
+
+export interface UpdateUserPayload {
+  nama?: string;
+  email?: string;
+  role?: UserRole;
+  is_active?: boolean | number;
+  branch_id?: number | null;
 }
 
 export async function getUsers(): Promise<User[]> {
@@ -27,22 +37,11 @@ export async function createUser(payload: CreateUserPayload): Promise<void> {
   await http.post("/users/", payload);
 }
 
-
 export async function resetUserPassword(userId: number, password: string): Promise<void> {
   await http.patch(`/users/${userId}/password`, { password });
-}
-
-
-export interface UpdateUserPayload {
-  nama?: string;
-  email?: string;
-  role?: UserRole;
-  is_active?: boolean;
 }
 
 export async function updateUser(userId: number, payload: UpdateUserPayload): Promise<User> {
   const { data } = await http.patch<User>(`/users/${userId}`, payload);
   return data;
 }
-
-
