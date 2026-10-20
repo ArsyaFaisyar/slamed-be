@@ -4,6 +4,30 @@ import { getMe, login as loginRequest, type AuthUser, type LoginPayload } from "
 import { clearToken, getToken, setToken } from "../utils/token";
 import { useProfileStore } from "./profile";
 
+function getUserIdFromToken(token: string): number | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+
+    const decoded = JSON.parse(atob(normalized)) as {
+      sub?: string;
+      exp?: number;
+    };
+
+    if (decoded.exp && decoded.exp * 1000 <= Date.now()) {
+      return null;
+    }
+
+    const id = Number(decoded.sub);
+
+    return Number.isInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export const useAuthStore = defineStore("auth", () => {
   const token = ref<string | null>(getToken());
   const user = ref<AuthUser | null>(null);
@@ -12,13 +36,30 @@ export const useAuthStore = defineStore("auth", () => {
 
   async function login(payload: LoginPayload) {
     const data = await loginRequest(payload);
+
     token.value = data.access_token;
     setToken(data.access_token);
-    user.value = data.user ?? null;
+
+    if (data.user) {
+      user.value = data.user;
+    } else {
+      await fetchMe();
+    }
   }
 
   async function fetchMe() {
-    user.value = await getMe();
+    if (!token.value) {
+      throw new Error("Token tidak tersedia");
+    }
+
+    const userId = getUserIdFromToken(token.value);
+
+    if (!userId) {
+      logout();
+      throw new Error("Token tidak valid atau ID user tidak tersedia");
+    }
+
+    user.value = await getMe(userId);
   }
 
   function logout() {
@@ -28,5 +69,12 @@ export const useAuthStore = defineStore("auth", () => {
     useProfileStore().reset();
   }
 
-  return { token, user, isAuthenticated, login, fetchMe, logout };
+  return {
+    token,
+    user,
+    isAuthenticated,
+    login,
+    fetchMe,
+    logout,
+  };
 });
