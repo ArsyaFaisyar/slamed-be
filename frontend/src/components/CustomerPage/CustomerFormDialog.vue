@@ -19,11 +19,7 @@ import { getErrorMessage, getFieldErrors } from '../../utils/error'
 export interface SalesOption {
   value: number
   label: string
-}
-
-interface AreaOption {
-  value: number
-  label: string
+  areaId: number | null
 }
 
 interface CategoryOption {
@@ -57,14 +53,6 @@ const categoryOptions = computed<CategoryOption[]>(() => {
 })
 
 const areas = ref<Area[]>([])
-const loadingAreas = ref(false)
-
-const areaOptions = computed<AreaOption[]>(() =>
-  areas.value.map((area) => ({
-    value: area.id,
-    label: area.nama,
-  })),
-)
 
 const form = reactive({
   nama_instansi: '',
@@ -72,11 +60,10 @@ const form = reactive({
   kontak_pic: '',
   kota: '',
   kategori: null as string | null,
-  area_id: null as number | null,
   sales_id: null as number | null,
 })
 
-type Field = keyof typeof form
+type Field = keyof typeof form | 'area_id'
 
 const allKeys: Field[] = [
   'nama_instansi',
@@ -84,8 +71,8 @@ const allKeys: Field[] = [
   'kontak_pic',
   'kota',
   'kategori',
-  'area_id',
   'sales_id',
+  'area_id',
 ]
 
 const submitted = ref(false)
@@ -94,6 +81,20 @@ const formError = ref('')
 const serverErrors = ref<Record<string, string>>({})
 
 const isEdit = computed(() => !!props.customer)
+
+const areaId = computed<number | null>(() => {
+  if (form.sales_id === null) return null
+
+  const sales = props.salesOptions.find((option) => option.value === form.sales_id)
+  if (sales) return sales.areaId
+
+  return form.sales_id === props.customer?.sales_id ? (props.customer?.area_id ?? null) : null
+})
+
+const areaLabel = computed(() => {
+  if (areaId.value === null) return ''
+  return areas.value.find((area) => area.id === areaId.value)?.nama ?? `ID ${areaId.value}`
+})
 
 const namaError = computed(() =>
   form.nama_instansi.trim() ? '' : 'Nama instansi wajib diisi',
@@ -105,7 +106,10 @@ function fieldError(field: Field) {
 
   if (field === 'nama_instansi') return namaError.value
   if (field === 'kategori' && !form.kategori) return 'Kategori wajib dipilih'
-  if (field === 'area_id' && form.area_id === null) return 'Area wajib dipilih'
+  if (field === 'sales_id' && form.sales_id === null) return 'Sales wajib dipilih'
+  if (field === 'area_id' && form.sales_id !== null && areaId.value === null) {
+    return 'Sales yang dipilih belum memiliki area'
+  }
 
   return ''
 }
@@ -116,7 +120,6 @@ function reset() {
   form.kontak_pic = props.customer?.kontak_pic ?? ''
   form.kota = props.customer?.kota ?? ''
   form.kategori = props.customer?.kategori ?? null
-  form.area_id = props.customer?.area_id ?? null
   form.sales_id = props.customer?.sales_id ?? null
   submitted.value = false
   formError.value = ''
@@ -124,15 +127,10 @@ function reset() {
 }
 
 async function loadAreas() {
-  loadingAreas.value = true
-
   try {
     areas.value = await getAreas()
-  } catch (error) {
+  } catch {
     areas.value = []
-    formError.value = getErrorMessage(error, 'Gagal memuat daftar area')
-  } finally {
-    loadingAreas.value = false
   }
 }
 
@@ -181,15 +179,15 @@ function buildPayload(): CustomerInput | Record<string, string | number | null> 
   }
 
   if (isEdit.value) {
-    if (form.area_id !== (props.customer?.area_id ?? null)) {
-      payload.area_id = form.area_id
+    if (areaId.value !== (props.customer?.area_id ?? null)) {
+      payload.area_id = areaId.value
     }
 
     if (form.sales_id !== (props.customer?.sales_id ?? null)) {
       payload.sales_id = form.sales_id
     }
   } else {
-    payload.area_id = form.area_id
+    payload.area_id = areaId.value
     payload.sales_id = form.sales_id
   }
 
@@ -199,7 +197,7 @@ function buildPayload(): CustomerInput | Record<string, string | number | null> 
 async function onSubmit() {
   submitted.value = true
 
-  if (namaError.value || !form.kategori || form.area_id === null) return
+  if (namaError.value || !form.kategori || form.sales_id === null || areaId.value === null) return
 
   saving.value = true
   formError.value = ''
@@ -327,22 +325,40 @@ async function onSubmit() {
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <label for="customer-area" class="text-sm font-medium">
-            Area <span class="text-red-500">*</span>
+          <label for="customer-sales" class="text-sm font-medium">
+            Sales <span class="text-red-500">*</span>
           </label>
           <Select
-            v-model="form.area_id"
-            input-id="customer-area"
-            :options="areaOptions"
+            v-model="form.sales_id"
+            input-id="customer-sales"
+            :options="salesOptions"
             option-label="label"
             option-value="value"
-            placeholder="Pilih area"
-            :loading="loadingAreas"
-            :disabled="loadingAreas || areaOptions.length === 0"
+            placeholder="Pilih sales"
             filter
             fluid
+            :invalid="!!fieldError('sales_id')"
+            empty-message="Daftar sales tidak tersedia"
+          />
+          <Message
+            v-if="fieldError('sales_id')"
+            severity="error"
+            size="small"
+            variant="simple"
+          >
+            {{ fieldError('sales_id') }}
+          </Message>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="customer-area" class="text-sm font-medium">Area</label>
+          <InputText
+            id="customer-area"
+            :model-value="areaLabel"
+            placeholder="Mengikuti area sales"
+            readonly
+            fluid
             :invalid="!!fieldError('area_id')"
-            empty-message="Daftar area tidak tersedia"
           />
           <Message
             v-if="fieldError('area_id')"
@@ -352,22 +368,6 @@ async function onSubmit() {
           >
             {{ fieldError('area_id') }}
           </Message>
-        </div>
-
-        <div class="flex flex-col gap-1.5 sm:col-span-2">
-          <label for="customer-sales" class="text-sm font-medium">Sales</label>
-          <Select
-            v-model="form.sales_id"
-            input-id="customer-sales"
-            :options="salesOptions"
-            option-label="label"
-            option-value="value"
-            placeholder="Pilih sales"
-            filter
-            show-clear
-            fluid
-            empty-message="Daftar sales tidak tersedia"
-          />
         </div>
       </div>
     </form>

@@ -1,4 +1,3 @@
-
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import InputText from 'primevue/inputtext'
@@ -6,15 +5,21 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
 
-import CustomerFormDialog, { type SalesOption } from '../components/CustomerPage/CustomerFormDialog.vue'
+import CustomerFormDialog, {
+  type SalesOption,
+} from '../components/CustomerPage/CustomerFormDialog.vue'
+
 import { deleteCustomer, getCustomers, type Customer } from '../api/customers'
 import { getUsers, type User } from '../api/users'
+import { getAreas, type Area } from '../api/areas'
 import { getErrorMessage } from '../utils/error'
 
 const confirm = useConfirm()
 
 const customers = ref<Customer[]>([])
 const users = ref<User[]>([])
+const areas = ref<Area[]>([])
+
 const search = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
@@ -24,16 +29,33 @@ const selectedEdit = ref<Customer | null>(null)
 
 const salesOptions = computed<SalesOption[]>(() =>
   users.value
-    .filter((user) => user.role?.toUpperCase() === 'SALES')
+    .filter((user) => user.role === 'SALES')
     .map((user) => ({
       value: user.id,
       label: user.is_active ? user.nama : `${user.nama} (nonaktif)`,
+      areaId: user.area_id ?? null,
     })),
 )
 
 const salesNames = computed(
   () => new Map(users.value.map((user) => [user.id, user.nama])),
 )
+
+const areaNames = computed(
+  () => new Map(areas.value.map((area) => [area.id, area.nama])),
+)
+
+function salesName(customer: Customer) {
+  if (customer.sales_id == null) return '-'
+
+  return salesNames.value.get(customer.sales_id) ?? `ID ${customer.sales_id}`
+}
+
+function areaName(areaId: number | null | undefined) {
+  if (areaId == null) return '-'
+
+  return areaNames.value.get(areaId) ?? `Area ID ${areaId}`
+}
 
 const filteredCustomers = computed(() => {
   const keyword = search.value.trim().toLowerCase()
@@ -48,25 +70,13 @@ const filteredCustomers = computed(() => {
       customer.kota,
       customer.kategori,
       customer.area_id,
+      areaName(customer.area_id),
       salesName(customer),
-    ].some((value) => String(value ?? '').toLowerCase().includes(keyword)),
+    ].some((value) =>
+      String(value ?? '').toLowerCase().includes(keyword),
+    ),
   )
 })
-
-function salesName(customer: Customer) {
-  if (customer.sales_id == null) return '-'
-  return salesNames.value.get(customer.sales_id) ?? `ID ${customer.sales_id}`
-}
-
-function openCreate() {
-  selectedEdit.value = null
-  formVisible.value = true
-}
-
-function openEdit(customer: Customer) {
-  selectedEdit.value = customer
-  formVisible.value = true
-}
 
 async function fetchCustomers() {
   loading.value = true
@@ -75,7 +85,10 @@ async function fetchCustomers() {
   try {
     customers.value = await getCustomers()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, 'Gagal memuat daftar customer')
+    errorMessage.value = getErrorMessage(
+      error,
+      'Gagal memuat daftar customer',
+    )
   } finally {
     loading.value = false
   }
@@ -89,20 +102,39 @@ async function fetchUsers() {
   }
 }
 
+async function fetchAreas() {
+  try {
+    areas.value = await getAreas()
+  } catch {
+    areas.value = []
+  }
+}
+
+function openCreate() {
+  selectedEdit.value = null
+  actionError.value = ''
+  formVisible.value = true
+}
+
+function openEdit(customer: Customer) {
+  selectedEdit.value = customer
+  actionError.value = ''
+  formVisible.value = true
+}
+
+function closeForm() {
+  formVisible.value = false
+  selectedEdit.value = null
+}
+
 function confirmDelete(customer: Customer) {
   confirm.require({
-    header: 'Hapus Customer',
-    message: `Apakah Anda yakin ingin menghapus customer ${customer.nama_instansi}? Tindakan ini tidak dapat dibatalkan.`,
+    message: `Apakah Anda yakin ingin menghapus customer "${customer.nama_instansi}"?`,
+    header: 'Konfirmasi Hapus Customer',
     icon: 'pi pi-exclamation-triangle',
-    rejectProps: {
-      label: 'Batal',
-      severity: 'secondary',
-      variant: 'text',
-    },
-    acceptProps: {
-      label: 'Hapus',
-      severity: 'danger',
-    },
+    rejectLabel: 'Batal',
+    acceptLabel: 'Hapus',
+    acceptClass: 'p-button-danger',
     accept: async () => {
       actionError.value = ''
 
@@ -110,7 +142,10 @@ function confirmDelete(customer: Customer) {
         await deleteCustomer(customer.id)
         await fetchCustomers()
       } catch (error) {
-        actionError.value = getErrorMessage(error, 'Gagal menghapus customer')
+        actionError.value = getErrorMessage(
+          error,
+          'Gagal menghapus customer',
+        )
       }
     },
   })
@@ -119,6 +154,7 @@ function confirmDelete(customer: Customer) {
 onMounted(() => {
   fetchCustomers()
   fetchUsers()
+  fetchAreas()
 })
 </script>
 
@@ -232,7 +268,9 @@ onMounted(() => {
               </td>
 
               <td class="px-5 py-4">{{ customer.kategori || '-' }}</td>
-              <td class="px-5 py-4 text-fg-muted">{{ customer.area_id }}</td>
+              <td class="px-5 py-4 text-fg-muted">
+                {{ areaName(customer.area_id) }}
+              </td>
               <td class="px-5 py-4 text-fg-muted">{{ salesName(customer) }}</td>
 
               <td class="px-5 py-4 text-center">

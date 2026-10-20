@@ -9,6 +9,7 @@ import Button from "primevue/button";
 import Message from "primevue/message";
 import { updateUser, type User } from "../../api/users";
 import { getBranches, type Branch } from "../../api/branches";
+import type { Area } from "../../api/areas";
 import { roleOptions, type UserRole } from "../../constant/roles";
 import { getErrorMessage, getFieldErrors } from "../../utils/error";
 
@@ -21,6 +22,9 @@ const visible = defineModel<boolean>("visible", { default: false });
 
 const props = defineProps<{
   user: User | null;
+  areas: Area[];
+  loadingAreas: boolean;
+  areasError: string;
 }>();
 
 const emit = defineEmits<{
@@ -37,12 +41,20 @@ const branchOptions = computed<BranchOption[]>(() =>
   })),
 );
 
+const areaOptions = computed(() =>
+  props.areas.map((area) => ({
+    label: area.nama,
+    value: area.id,
+  })),
+);
+
 const form = reactive({
   nama: "",
   email: "",
   role: null as UserRole | null,
   is_active: true,
   branch_id: null as number | null,
+  area_id: null as number | null,
 });
 
 const submitted = ref(false);
@@ -62,7 +74,7 @@ const clientErrors = computed(() => ({
   role: form.role ? "" : "Role wajib dipilih",
 }));
 
-function fieldError(field: "nama" | "email" | "role" | "branch_id") {
+function fieldError(field: "nama" | "email" | "role" | "branch_id" | "area_id") {
   if (serverErrors.value[field]) return serverErrors.value[field];
 
   if (submitted.value && field in clientErrors.value) {
@@ -78,6 +90,7 @@ function resetForm() {
   form.role = (props.user?.role as UserRole) ?? null;
   form.is_active = Number(props.user?.is_active) === 1;
   form.branch_id = props.user?.branch_id ?? null;
+  form.area_id = props.user?.area_id ?? null;
 
   submitted.value = false;
   formError.value = "";
@@ -128,6 +141,7 @@ async function onSubmit() {
       role: form.role as UserRole,
       is_active: form.is_active,
       branch_id: form.branch_id,
+      area_id: form.area_id,
     });
 
     visible.value = false;
@@ -166,6 +180,9 @@ async function onSubmit() {
     >
       <Message v-if="formError" severity="error" size="small">
         {{ formError }}
+      </Message>
+      <Message v-if="areasError" severity="error" size="small">
+        {{ areasError }}
       </Message>
 
       <div class="flex flex-col gap-1.5">
@@ -260,6 +277,35 @@ async function onSubmit() {
           variant="simple"
         >
           {{ fieldError("branch_id") }}
+        </Message>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="edit-user-area" class="text-sm font-medium">
+          Area
+        </label>
+        <Select
+          v-model="form.area_id"
+          input-id="edit-user-area"
+          :options="areaOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Pilih area"
+          filter
+          show-clear
+          fluid
+          :loading="loadingAreas"
+          :disabled="loadingAreas || areaOptions.length === 0"
+          :invalid="!!fieldError('area_id')"
+          empty-message="Daftar area tidak tersedia"
+        />
+        <Message
+          v-if="fieldError('area_id')"
+          severity="error"
+          size="small"
+          variant="simple"
+        >
+          {{ fieldError("area_id") }}
         </Message>
       </div>
 

@@ -199,7 +199,7 @@ def update_user(
             )
 
     for field, value in updates.items():
-        if field == "branch_id" or value is not None:
+        if field in {"branch_id", "area_id"} or value is not None:
             setattr(user, field, value)
 
     try:
@@ -239,4 +239,3 @@ def reset_user_password(
             detail="Gagal mengubah password",
         )
     return {"message": "Password berhasil diubah"}
-

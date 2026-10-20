@@ -11,15 +11,15 @@ export function getToken(): string | null {
 export function setToken(token: string): void {
   try {
     localStorage.setItem(TOKEN_KEY, token);
-  } catch {
-    return;
+  } catch (error) {
+    console.error("Gagal menyimpan token autentikasi:", error);
   }
 }
 
 export function clearToken(): void {
   try {
     localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    return;
+  } catch (error) {
+    console.error("Gagal menghapus token autentikasi:", error);
   }
 }

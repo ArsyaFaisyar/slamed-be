@@ -10,6 +10,7 @@ import EditUserDialog from '../components/UserPage/EditUserDialog.vue'
 
 import { getUsers, type User } from '../api/users'
 import { getBranches, type Branch } from '../api/branches'
+import { getAreas, type Area } from '../api/areas'
 import { getErrorMessage } from '../utils/error'
 
 const editDialogVisible = ref(false)
@@ -17,9 +18,12 @@ const selectedEditUser = ref<User | null>(null)
 
 const users = ref<User[]>([])
 const branches = ref<Branch[]>([])
+const areas = ref<Area[]>([])
 const search = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
+const areaError = ref('')
+const loadingAreas = ref(false)
 const dialogVisible = ref(false)
 
 const resetDialogVisible = ref(false)
@@ -35,6 +39,16 @@ function getBranchName(branchId: number | string | null | undefined) {
   if (branchId == null) return '-'
 
   return branchMap.value.get(String(branchId)) ?? `Cabang tidak ditemukan (ID ${branchId})`
+}
+
+const areaMap = computed(() =>
+  new Map(areas.value.map((area) => [String(area.id), area.nama])),
+)
+
+function getAreaName(areaId: number | string | null | undefined) {
+  if (areaId == null) return '-'
+
+  return areaMap.value.get(String(areaId)) ?? `Area tidak ditemukan (ID ${areaId})`
 }
 
 function openEditUser(user: User) {
@@ -59,6 +73,7 @@ const filteredUsers = computed(() => {
       user.email,
       user.role,
       getBranchName(user.branch_id),
+      getAreaName(user.area_id),
     ].some((value) =>
       String(value ?? '').toLowerCase().includes(keyword),
     ),
@@ -89,6 +104,20 @@ async function fetchBranches() {
   }
 }
 
+async function fetchAreas() {
+  loadingAreas.value = true
+  areaError.value = ''
+
+  try {
+    areas.value = await getAreas()
+  } catch (error) {
+    areas.value = []
+    areaError.value = getErrorMessage(error, 'Gagal memuat daftar area')
+  } finally {
+    loadingAreas.value = false
+  }
+}
+
 function formatRole(role: string) {
   return role.replaceAll('_', ' ')
 }
@@ -96,6 +125,7 @@ function formatRole(role: string) {
 onMounted(() => {
   fetchUsers()
   fetchBranches()
+  fetchAreas()
 })
 </script>
 
@@ -114,6 +144,10 @@ onMounted(() => {
           @click="fetchUsers"
         />
       </div>
+    </Message>
+
+    <Message v-if="areaError" severity="error" :closable="false">
+      {{ areaError }}
     </Message>
 
     <section class="rounded-xl border border-line bg-card">
@@ -188,6 +222,7 @@ onMounted(() => {
               <th class="px-5 py-3 font-medium">Email</th>
               <th class="px-5 py-3 font-medium">Role</th>
               <th class="px-5 py-3 font-medium">Cabang</th>
+              <th class="px-5 py-3 font-medium">Area</th>
               <th class="px-5 py-3 font-medium">Status</th>
               <th class="px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
@@ -221,6 +256,10 @@ onMounted(() => {
 
               <td class="px-5 py-4 text-fg-muted">
                 {{ getBranchName(user.branch_id) }}
+              </td>
+
+              <td class="px-5 py-4 text-fg-muted">
+                {{ getAreaName(user.area_id) }}
               </td>
 
               <td class="px-5 py-4">
@@ -276,6 +315,9 @@ onMounted(() => {
 
     <UserFormDialog
       v-model:visible="dialogVisible"
+      :areas="areas"
+      :loading-areas="loadingAreas"
+      :areas-error="areaError"
       @created="fetchUsers"
     />
 
@@ -290,6 +332,9 @@ onMounted(() => {
       v-if="selectedEditUser"
       v-model:visible="editDialogVisible"
       :user="selectedEditUser"
+      :areas="areas"
+      :loading-areas="loadingAreas"
+      :areas-error="areaError"
       @updated="fetchUsers"
     />
   </div>
