@@ -59,6 +59,7 @@ export const menu: MenuItem[] = [
     children: [
       { label: "Branch", to: "/master/branch" },
       { label: "Media Pengadaan", to: "/master/media-pengadaan" },
+      { label: "Kategori Customer", to: "/master/kategori-customer" },
       { label: "Area", to: "/master/area" },
       { label: "User", to: "/master/user" },
     ],
@@ -68,7 +69,6 @@ export const menu: MenuItem[] = [
     icon: Settings,
     children: [
       { label: "Pengaturan", to: "/setting/pengaturan" },
-      { label: "Kategori Customer", to: "/setting/kategori-customer" },
       { label: "Template Penawaran", to: "/setting/template-penawaran" },
       { label: "Role", to: "/setting/role" },
       { label: "RBCA", to: "/setting/rbca" },

@@ -1,4 +1,3 @@
-
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import Dialog from 'primevue/dialog'
@@ -14,6 +13,7 @@ import {
   type CustomerInput,
 } from '../../api/customers'
 import { getAreas, type Area } from '../../api/areas'
+import { getCustomerCategories, type CustomerCategory } from '../../api/customerCategories'
 import { getErrorMessage, getFieldErrors } from '../../utils/error'
 
 export interface SalesOption {
@@ -26,6 +26,11 @@ interface AreaOption {
   label: string
 }
 
+interface CategoryOption {
+  value: string
+  label: string
+}
+
 const props = defineProps<{
   customer?: Customer | null
   salesOptions: SalesOption[]
@@ -34,13 +39,22 @@ const props = defineProps<{
 const visible = defineModel<boolean>('visible', { default: false })
 const emit = defineEmits<{ saved: [] }>()
 
-const categories = [
-  { label: 'Pemerintah', value: 'Pemerintah' },
-  { label: 'Swasta', value: 'Swasta' },
-  { label: 'Pendidikan', value: 'Pendidikan' },
-  { label: 'Kesehatan', value: 'Kesehatan' },
-  { label: 'Lainnya', value: 'Lainnya' },
-]
+const categories = ref<CustomerCategory[]>([])
+const loadingCategories = ref(false)
+
+const categoryOptions = computed<CategoryOption[]>(() => {
+  const options = categories.value.map((category) => ({
+    value: category.nama,
+    label: category.nama,
+  }))
+
+  const current = props.customer?.kategori
+  if (current && !options.some((option) => option.value === current)) {
+    options.unshift({ value: current, label: current })
+  }
+
+  return options
+})
 
 const areas = ref<Area[]>([])
 const loadingAreas = ref(false)
@@ -109,10 +123,7 @@ function reset() {
   serverErrors.value = {}
 }
 
-watch(visible, async (value) => {
-  if (!value) return
-
-  reset()
+async function loadAreas() {
   loadingAreas.value = true
 
   try {
@@ -123,6 +134,27 @@ watch(visible, async (value) => {
   } finally {
     loadingAreas.value = false
   }
+}
+
+async function loadCategories() {
+  loadingCategories.value = true
+
+  try {
+    categories.value = await getCustomerCategories()
+  } catch (error) {
+    categories.value = []
+    formError.value = getErrorMessage(error, 'Gagal memuat daftar kategori')
+  } finally {
+    loadingCategories.value = false
+  }
+}
+
+watch(visible, (value) => {
+  if (!value) return
+
+  reset()
+  loadAreas()
+  loadCategories()
 })
 
 function buildPayload(): CustomerInput | Record<string, string | number | null> {
@@ -273,12 +305,16 @@ async function onSubmit() {
           <Select
             v-model="form.kategori"
             input-id="customer-kategori"
-            :options="categories"
+            :options="categoryOptions"
             option-label="label"
             option-value="value"
             placeholder="Pilih kategori"
+            :loading="loadingCategories"
+            :disabled="loadingCategories || categoryOptions.length === 0"
+            filter
             fluid
             :invalid="!!fieldError('kategori')"
+            empty-message="Daftar kategori tidak tersedia"
           />
           <Message
             v-if="fieldError('kategori')"
