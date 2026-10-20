@@ -20,6 +20,7 @@ from app.routers.branches import router as branches_router
 from app.routers.areas import router as areas_router
 from app.routers.media_pengadaan import router as media_pengadaan_router
 from app.routers.customer_categories import router as customer_categories_router
+from app.routers.project_statuses import router as project_statuses_router
 
 app = FastAPI(title="Sales Management System API", version="1.0.0")
 
@@ -49,7 +50,7 @@ app.include_router(lkh_attachments_router)
 app.include_router(branches_router)
 app.include_router(areas_router)
 app.include_router(media_pengadaan_router)
-
+app.include_router(project_statuses_router)
 
 @app.get("/")
 def root():

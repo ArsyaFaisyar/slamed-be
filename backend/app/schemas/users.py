@@ -30,7 +30,6 @@ class UserUpdate(BaseModel):
     branch_id: Optional[int] = None
     area_id: Optional[int] = None
 
-
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
