@@ -9,6 +9,7 @@ import Button from "primevue/button";
 import Message from "primevue/message";
 import { createUser } from "../../api/users";
 import { getBranches, type Branch } from "../../api/branches";
+import type { Area } from "../../api/areas";
 import { roleOptions, type UserRole } from "../../constant/roles";
 import { getErrorMessage, getFieldErrors } from "../../utils/error";
 
@@ -19,6 +20,11 @@ interface BranchOption {
 
 const visible = defineModel<boolean>("visible", { default: false });
 const emit = defineEmits<{ created: [] }>();
+const props = defineProps<{
+  areas: Area[];
+  loadingAreas: boolean;
+  areasError: string;
+}>();
 
 const fields = [
   "nama",
@@ -27,6 +33,7 @@ const fields = [
   "password",
   "role",
   "branch_id",
+  "area_id",
 ] as const;
 
 type Field = (typeof fields)[number];
@@ -51,10 +58,17 @@ function emptyForm() {
     password: "",
     role: null as UserRole | null,
     branch_id: null as number | null,
+    area_id: null as number | null,
   };
 }
 
 const form = reactive(emptyForm());
+const areaOptions = computed(() =>
+  props.areas.map((area) => ({
+    label: area.nama,
+    value: area.id,
+  })),
+);
 const submitted = ref(false);
 const saving = ref(false);
 const formError = ref("");
@@ -74,6 +88,7 @@ const clientErrors = computed<Record<Field, string>>(() => {
     password: form.password ? "" : "Kata sandi wajib diisi",
     role: form.role ? "" : "Role wajib dipilih",
     branch_id: "",
+    area_id: "",
   };
 });
 
@@ -129,6 +144,7 @@ async function onSubmit() {
       password: form.password,
       role: form.role as UserRole,
       branch_id: form.branch_id,
+      area_id: form.area_id,
     });
 
     visible.value = false;
@@ -173,6 +189,9 @@ async function onSubmit() {
     >
       <Message v-if="formError" severity="error" size="small">
         {{ formError }}
+      </Message>
+      <Message v-if="areasError" severity="error" size="small">
+        {{ areasError }}
       </Message>
 
       <div class="flex flex-col gap-1.5">
@@ -307,6 +326,33 @@ async function onSubmit() {
           variant="simple"
         >
           {{ fieldError("branch_id") }}
+        </Message>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="user-area" class="text-sm font-medium">Area</label>
+        <Select
+          v-model="form.area_id"
+          input-id="user-area"
+          :options="areaOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Pilih area"
+          filter
+          show-clear
+          fluid
+          :loading="loadingAreas"
+          :disabled="loadingAreas || areaOptions.length === 0"
+          :invalid="!!fieldError('area_id')"
+          empty-message="Daftar area tidak tersedia"
+        />
+        <Message
+          v-if="fieldError('area_id')"
+          severity="error"
+          size="small"
+          variant="simple"
+        >
+          {{ fieldError("area_id") }}
         </Message>
       </div>
     </form>

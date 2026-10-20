@@ -9,6 +9,7 @@ export interface User {
   role: string;
   is_active: number;
   branch_id: number | null;
+  area_id: number | null;
 }
 
 export interface CreateUserPayload {
@@ -18,6 +19,7 @@ export interface CreateUserPayload {
   password: string;
   role: UserRole;
   branch_id: number | null;
+  area_id: number | null;
 }
 
 export interface UpdateUserPayload {
@@ -26,6 +28,7 @@ export interface UpdateUserPayload {
   role?: UserRole;
   is_active?: boolean | number;
   branch_id?: number | null;
+  area_id?: number | null;
 }
 
 export async function getUsers(): Promise<User[]> {
