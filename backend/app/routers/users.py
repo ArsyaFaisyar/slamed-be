@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.branch import Branch
 from app.db.database import get_db
 from app.models.user import User
 from app.schemas.users import UserCreate, UserUpdate, UserResponse, UserPasswordReset
@@ -11,6 +12,17 @@ from app.core.dependencies import get_current_user, require_roles
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
+def validate_branch(db: Session, branch_id: int | None):
+    if branch_id is None:
+        return
+
+    branch = db.query(Branch).filter(Branch.id == branch_id).first()
+
+    if not branch:
+        raise HTTPException(
+            status_code=400,
+            detail="Branch tidak ditemukan",
+        )
 
 @router.get("/", response_model=list[UserResponse])
 def get_users(
@@ -63,7 +75,6 @@ def create_user(
         require_roles("SUPERADMIN", "SPV")
     ),
 ):
-    # SPV hanya boleh membuat akun SALES.
     if current_user.role == "SPV" and data.role != "SALES":
         raise HTTPException(
             status_code=403,
@@ -81,6 +92,7 @@ def create_user(
             detail="Username atau email sudah digunakan",
         )
 
+    validate_branch(db, data.branch_id)
     user = User(
         nama=data.nama,
         username=data.username,
@@ -88,6 +100,7 @@ def create_user(
         password_hash=hash_password(data.password),
         role=data.role,
         is_active=1,
+        branch_id=data.branch_id,
     )
 
     db.add(user)
@@ -135,6 +148,8 @@ def update_user(
             )
 
     updates = data.model_dump(exclude_unset=True)
+    if "branch_id" in updates:
+        validate_branch(db, updates["branch_id"])
 
     if "email" in updates and updates["email"] is not None:
         updates["email"] = str(updates["email"])
@@ -151,7 +166,7 @@ def update_user(
             )
 
     for field, value in updates.items():
-        if value is not None:
+        if field == "branch_id" or value is not None:
             setattr(user, field, value)
 
     try:

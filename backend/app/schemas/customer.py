@@ -8,7 +8,7 @@ class CustomerCreate(BaseModel):
     kontak_pic: Optional[str] = None
     kota: Optional[str] = None
     kategori: Optional[str] = None
-    area: Optional[str] = None
+    area_id: Optional[int] = None
     sales_id: Optional[int] = None
 class CustomerUpdate(BaseModel):
     nama_instansi: Optional[str] = None
@@ -16,7 +16,7 @@ class CustomerUpdate(BaseModel):
     kontak_pic: Optional[str] = None
     kota: Optional[str] = None
     kategori: Optional[str] = None
-    area: Optional[str] = None
+    area_id: Optional[int] = None
     sales_id: Optional[int] = None
 class CustomerResponse(BaseModel):
     id: int
@@ -25,7 +25,7 @@ class CustomerResponse(BaseModel):
     kontak_pic: Optional[str] = None
     kota: Optional[str] = None
     kategori: Optional[str] = None
-    area: Optional[str] = None
+    area_id: Optional[int] = None
     sales_id: Optional[int] = None
     created_at: Optional[datetime] = None
 

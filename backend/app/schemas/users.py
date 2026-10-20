@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from typing import Literal
+from typing import Literal, Optional
 
 
 UserRole = Literal[
@@ -18,6 +18,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     role: UserRole
+    branch_id: Optional[int] = None
 
 
 class UserUpdate(BaseModel):
@@ -35,6 +36,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     role: str
     is_active: int
+    branch_id: Optional[int] = None
 
 class UserPasswordReset(BaseModel):
     password: str = Field(min_length=8)

@@ -1,10 +1,10 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.customer import Customer
 from app.models.user import User
+from app.models.area import Area
 from app.schemas.customer import (
     CustomerCreate,
     CustomerUpdate,
@@ -17,6 +17,19 @@ router = APIRouter(
     tags=["Customers"],
 )
 
+def validate_area(db: Session, area_id: int | None):
+    if area_id is None:
+        return
+
+    area = db.query(Area).filter(
+        Area.id == area_id
+    ).first()
+
+    if not area:
+        raise HTTPException(
+            status_code=400,
+            detail="Area tidak ditemukan",
+        )
 
 @router.get("/", response_model=list[CustomerResponse])
 def get_customers(
@@ -87,7 +100,7 @@ def create_customer(
                 status_code=400,
                 detail="Sales tidak ditemukan, tidak aktif, atau role bukan SALES",
             )
-
+    validate_area(db, data.area_id)
     customer = Customer(**data.model_dump())
     db.add(customer)
     db.commit()
@@ -116,7 +129,8 @@ def update_customer(
         )
 
     updates = data.model_dump(exclude_unset=True)
-
+    if "area_id" in updates:
+        validate_area(db, updates["area_id"])
     if "sales_id" in updates and updates["sales_id"] is not None:
         sales = db.query(User).filter(
             User.id == updates["sales_id"],

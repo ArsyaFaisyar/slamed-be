@@ -7,3 +7,4 @@ from app.models.lkh_attachment import LKHAttachment
 from app.models.branch import Branch
 from app.models.area import Area
 from app.models.media_pengadaan import MediaPengadaan
+from app.models.customer import Customer
