@@ -5,12 +5,15 @@ import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
+
 import {
   createCustomer,
   updateCustomer,
   type Customer,
   type CustomerInput,
 } from '../../api/customers'
+import { getAreas, type Area } from '../../api/areas'
+import { getCustomerCategories, type CustomerCategory } from '../../api/customerCategories'
 import { getErrorMessage, getFieldErrors } from '../../utils/error'
 
 export interface SalesOption {
@@ -18,34 +21,72 @@ export interface SalesOption {
   label: string
 }
 
-const props = defineProps<{ customer?: Customer | null; salesOptions: SalesOption[] }>()
+interface AreaOption {
+  value: number
+  label: string
+}
+
+interface CategoryOption {
+  value: string
+  label: string
+}
+
+const props = defineProps<{
+  customer?: Customer | null
+  salesOptions: SalesOption[]
+}>()
+
 const visible = defineModel<boolean>('visible', { default: false })
 const emit = defineEmits<{ saved: [] }>()
 
-const textFields = [
-  { key: 'nama_instansi', label: 'Nama instansi', required: true, wide: true },
-  { key: 'nama_pic', label: 'Nama PIC' },
-  { key: 'kontak_pic', label: 'Kontak PIC', type: 'tel' },
-  { key: 'kota', label: 'Kota' },
-  { key: 'kategori', label: 'Kategori' },
-  { key: 'area', label: 'Area' },
-] as const
+const categories = ref<CustomerCategory[]>([])
+const loadingCategories = ref(false)
 
-type TextKey = (typeof textFields)[number]['key']
-type Field = TextKey | 'sales_id'
+const categoryOptions = computed<CategoryOption[]>(() => {
+  const options = categories.value.map((category) => ({
+    value: category.nama,
+    label: category.nama,
+  }))
 
-const textKeys = textFields.map((field) => field.key) as TextKey[]
-const allKeys: Field[] = [...textKeys, 'sales_id']
+  const current = props.customer?.kategori
+  if (current && !options.some((option) => option.value === current)) {
+    options.unshift({ value: current, label: current })
+  }
+
+  return options
+})
+
+const areas = ref<Area[]>([])
+const loadingAreas = ref(false)
+
+const areaOptions = computed<AreaOption[]>(() =>
+  areas.value.map((area) => ({
+    value: area.id,
+    label: area.nama,
+  })),
+)
 
 const form = reactive({
   nama_instansi: '',
   nama_pic: '',
   kontak_pic: '',
   kota: '',
-  kategori: '',
-  area: '',
+  kategori: null as string | null,
+  area_id: null as number | null,
   sales_id: null as number | null,
 })
+
+type Field = keyof typeof form
+
+const allKeys: Field[] = [
+  'nama_instansi',
+  'nama_pic',
+  'kontak_pic',
+  'kota',
+  'kategori',
+  'area_id',
+  'sales_id',
+]
 
 const submitted = ref(false)
 const saving = ref(false)
@@ -53,40 +94,102 @@ const formError = ref('')
 const serverErrors = ref<Record<string, string>>({})
 
 const isEdit = computed(() => !!props.customer)
-const namaError = computed(() => (form.nama_instansi.trim() ? '' : 'Nama instansi wajib diisi'))
+
+const namaError = computed(() =>
+  form.nama_instansi.trim() ? '' : 'Nama instansi wajib diisi',
+)
 
 function fieldError(field: Field) {
   if (serverErrors.value[field]) return serverErrors.value[field]
-  return submitted.value && field === 'nama_instansi' ? namaError.value : ''
+  if (!submitted.value) return ''
+
+  if (field === 'nama_instansi') return namaError.value
+  if (field === 'kategori' && !form.kategori) return 'Kategori wajib dipilih'
+  if (field === 'area_id' && form.area_id === null) return 'Area wajib dipilih'
+
+  return ''
 }
 
 function reset() {
-  for (const key of textKeys) form[key] = props.customer?.[key] ?? ''
+  form.nama_instansi = props.customer?.nama_instansi ?? ''
+  form.nama_pic = props.customer?.nama_pic ?? ''
+  form.kontak_pic = props.customer?.kontak_pic ?? ''
+  form.kota = props.customer?.kota ?? ''
+  form.kategori = props.customer?.kategori ?? null
+  form.area_id = props.customer?.area_id ?? null
   form.sales_id = props.customer?.sales_id ?? null
   submitted.value = false
   formError.value = ''
   serverErrors.value = {}
 }
 
+async function loadAreas() {
+  loadingAreas.value = true
+
+  try {
+    areas.value = await getAreas()
+  } catch (error) {
+    areas.value = []
+    formError.value = getErrorMessage(error, 'Gagal memuat daftar area')
+  } finally {
+    loadingAreas.value = false
+  }
+}
+
+async function loadCategories() {
+  loadingCategories.value = true
+
+  try {
+    categories.value = await getCustomerCategories()
+  } catch (error) {
+    categories.value = []
+    formError.value = getErrorMessage(error, 'Gagal memuat daftar kategori')
+  } finally {
+    loadingCategories.value = false
+  }
+}
+
 watch(visible, (value) => {
-  if (value) reset()
+  if (!value) return
+
+  reset()
+  loadAreas()
+  loadCategories()
 })
 
-function buildPayload() {
+function buildPayload(): CustomerInput | Record<string, string | number | null> {
   const payload: Record<string, string | number | null> = {}
 
-  for (const key of textKeys) {
-    const value = form[key].trim()
+  const textFields = [
+    'nama_instansi',
+    'nama_pic',
+    'kontak_pic',
+    'kota',
+    'kategori',
+  ] as const
+
+  for (const key of textFields) {
+    const value = form[key]?.trim() ?? ''
+
     if (isEdit.value) {
-      if (value !== (props.customer?.[key] ?? '')) payload[key] = value || null
-    } else if (value) {
-      payload[key] = value
+      if (value !== (props.customer?.[key] ?? '')) {
+        payload[key] = value || null
+      }
+    } else {
+      payload[key] = value || null
     }
   }
 
   if (isEdit.value) {
-    if (form.sales_id !== (props.customer?.sales_id ?? null)) payload.sales_id = form.sales_id
-  } else if (form.sales_id !== null) {
+    if (form.area_id !== (props.customer?.area_id ?? null)) {
+      payload.area_id = form.area_id
+    }
+
+    if (form.sales_id !== (props.customer?.sales_id ?? null)) {
+      payload.sales_id = form.sales_id
+    }
+  } else {
+    payload.area_id = form.area_id
     payload.sales_id = form.sales_id
   }
 
@@ -95,7 +198,8 @@ function buildPayload() {
 
 async function onSubmit() {
   submitted.value = true
-  if (namaError.value) return
+
+  if (namaError.value || !form.kategori || form.area_id === null) return
 
   saving.value = true
   formError.value = ''
@@ -105,7 +209,9 @@ async function onSubmit() {
     const payload = buildPayload()
 
     if (props.customer) {
-      if (Object.keys(payload).length > 0) await updateCustomer(props.customer.id, payload)
+      if (Object.keys(payload).length > 0) {
+        await updateCustomer(props.customer.id, payload)
+      }
     } else {
       await createCustomer(payload as CustomerInput)
     }
@@ -114,8 +220,12 @@ async function onSubmit() {
     emit('saved')
   } catch (error) {
     const errors = getFieldErrors(error)
-    const known = Object.fromEntries(Object.entries(errors).filter(([key]) => allKeys.includes(key as Field)))
+    const known = Object.fromEntries(
+      Object.entries(errors).filter(([key]) => allKeys.includes(key as Field)),
+    )
+
     serverErrors.value = known
+
     if (Object.keys(known).length === 0) {
       formError.value = getErrorMessage(error, 'Gagal menyimpan customer')
     }
@@ -135,30 +245,112 @@ async function onSubmit() {
     :closable="!saving"
     :close-on-escape="!saving"
   >
-    <form id="customer-form" class="flex flex-col gap-4" novalidate @submit.prevent="onSubmit">
-      <Message v-if="formError" severity="error" size="small">{{ formError }}</Message>
+    <form
+      id="customer-form"
+      class="flex flex-col gap-4"
+      novalidate
+      @submit.prevent="onSubmit"
+    >
+      <Message v-if="formError" severity="error" size="small">
+        {{ formError }}
+      </Message>
 
       <div class="grid gap-4 sm:grid-cols-2">
-        <div
-          v-for="field in textFields"
-          :key="field.key"
-          class="flex flex-col gap-1.5"
-          :class="'wide' in field && 'sm:col-span-2'"
-        >
-          <label :for="`customer-${field.key}`" class="text-sm font-medium">
-            {{ field.label }}
-            <span v-if="'required' in field" class="text-red-500">*</span>
+        <div class="flex flex-col gap-1.5 sm:col-span-2">
+          <label for="customer-nama" class="text-sm font-medium">
+            Nama instansi <span class="text-red-500">*</span>
           </label>
           <InputText
-            :id="`customer-${field.key}`"
-            v-model="form[field.key]"
-            :type="'type' in field ? field.type : 'text'"
+            id="customer-nama"
+            v-model="form.nama_instansi"
+            autocomplete="organization"
+            fluid
+            :invalid="!!fieldError('nama_instansi')"
+          />
+          <Message
+            v-if="fieldError('nama_instansi')"
+            severity="error"
+            size="small"
+            variant="simple"
+          >
+            {{ fieldError('nama_instansi') }}
+          </Message>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="customer-pic" class="text-sm font-medium">Nama PIC</label>
+          <InputText id="customer-pic" v-model="form.nama_pic" autocomplete="off" fluid />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="customer-kontak" class="text-sm font-medium">Kontak PIC</label>
+          <InputText
+            id="customer-kontak"
+            v-model="form.kontak_pic"
+            type="tel"
             autocomplete="off"
             fluid
-            :invalid="!!fieldError(field.key)"
           />
-          <Message v-if="fieldError(field.key)" severity="error" size="small" variant="simple">
-            {{ fieldError(field.key) }}
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="customer-kota" class="text-sm font-medium">Kota</label>
+          <InputText id="customer-kota" v-model="form.kota" autocomplete="off" fluid />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="customer-kategori" class="text-sm font-medium">
+            Kategori <span class="text-red-500">*</span>
+          </label>
+          <Select
+            v-model="form.kategori"
+            input-id="customer-kategori"
+            :options="categoryOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Pilih kategori"
+            :loading="loadingCategories"
+            :disabled="loadingCategories || categoryOptions.length === 0"
+            filter
+            fluid
+            :invalid="!!fieldError('kategori')"
+            empty-message="Daftar kategori tidak tersedia"
+          />
+          <Message
+            v-if="fieldError('kategori')"
+            severity="error"
+            size="small"
+            variant="simple"
+          >
+            {{ fieldError('kategori') }}
+          </Message>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="customer-area" class="text-sm font-medium">
+            Area <span class="text-red-500">*</span>
+          </label>
+          <Select
+            v-model="form.area_id"
+            input-id="customer-area"
+            :options="areaOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Pilih area"
+            :loading="loadingAreas"
+            :disabled="loadingAreas || areaOptions.length === 0"
+            filter
+            fluid
+            :invalid="!!fieldError('area_id')"
+            empty-message="Daftar area tidak tersedia"
+          />
+          <Message
+            v-if="fieldError('area_id')"
+            severity="error"
+            size="small"
+            variant="simple"
+          >
+            {{ fieldError('area_id') }}
           </Message>
         </div>
 
@@ -175,18 +367,26 @@ async function onSubmit() {
             show-clear
             fluid
             empty-message="Daftar sales tidak tersedia"
-            :invalid="!!fieldError('sales_id')"
           />
-          <Message v-if="fieldError('sales_id')" severity="error" size="small" variant="simple">
-            {{ fieldError('sales_id') }}
-          </Message>
         </div>
       </div>
     </form>
 
     <template #footer>
-      <Button label="Batal" variant="text" severity="secondary" :disabled="saving" @click="visible = false" />
-      <Button type="submit" form="customer-form" label="Simpan" icon="pi pi-check" :loading="saving" />
+      <Button
+        label="Batal"
+        variant="text"
+        severity="secondary"
+        :disabled="saving"
+        @click="visible = false"
+      />
+      <Button
+        type="submit"
+        form="customer-form"
+        label="Simpan"
+        icon="pi pi-check"
+        :loading="saving"
+      />
     </template>
   </Dialog>
 </template>

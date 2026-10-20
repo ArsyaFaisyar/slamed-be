@@ -7,17 +7,19 @@ export interface Customer {
   kontak_pic: string | null;
   kota: string | null;
   kategori: string | null;
-  area: string | null;
-  sales_id: number | null;
+  area_id: number;
+  sales_id: number;
 }
 
-export type CustomerInput = {
+export interface CustomerInput {
   nama_instansi: string;
-} & Partial<
-  Record<"nama_pic" | "kontak_pic" | "kota" | "kategori" | "area", string | null> & {
-    sales_id: number | null;
-  }
->;
+  nama_pic: string;
+  kontak_pic: string;
+  kota: string;
+  kategori: string;
+  area_id: number;
+  sales_id: number;
+}
 
 export type CustomerUpdate = Partial<CustomerInput>;
 

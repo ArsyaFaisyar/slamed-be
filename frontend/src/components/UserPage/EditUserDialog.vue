@@ -1,3 +1,4 @@
+
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import Dialog from "primevue/dialog";
@@ -7,8 +8,14 @@ import ToggleSwitch from "primevue/toggleswitch";
 import Button from "primevue/button";
 import Message from "primevue/message";
 import { updateUser, type User } from "../../api/users";
+import { getBranches, type Branch } from "../../api/branches";
 import { roleOptions, type UserRole } from "../../constant/roles";
 import { getErrorMessage, getFieldErrors } from "../../utils/error";
+
+interface BranchOption {
+  label: string;
+  value: number;
+}
 
 const visible = defineModel<boolean>("visible", { default: false });
 
@@ -20,11 +27,22 @@ const emit = defineEmits<{
   updated: [];
 }>();
 
+const branches = ref<Branch[]>([]);
+const loadingBranches = ref(false);
+
+const branchOptions = computed<BranchOption[]>(() =>
+  branches.value.map((branch) => ({
+    label: branch.nama,
+    value: branch.id,
+  })),
+);
+
 const form = reactive({
   nama: "",
   email: "",
   role: null as UserRole | null,
   is_active: true,
+  branch_id: null as number | null,
 });
 
 const submitted = ref(false);
@@ -36,28 +54,59 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const clientErrors = computed(() => ({
   nama: form.nama.trim() ? "" : "Nama wajib diisi",
-  email: !form.email.trim() ? "Email wajib diisi" : !emailPattern.test(form.email.trim()) ? "Format email tidak valid" : "",
+  email: !form.email.trim()
+    ? "Email wajib diisi"
+    : !emailPattern.test(form.email.trim())
+      ? "Format email tidak valid"
+      : "",
   role: form.role ? "" : "Role wajib dipilih",
 }));
 
-function fieldError(field: "nama" | "email" | "role") {
-  return serverErrors.value[field] || (submitted.value ? clientErrors.value[field] : "");
+function fieldError(field: "nama" | "email" | "role" | "branch_id") {
+  if (serverErrors.value[field]) return serverErrors.value[field];
+
+  if (submitted.value && field in clientErrors.value) {
+    return clientErrors.value[field as keyof typeof clientErrors.value];
+  }
+
+  return "";
 }
 
 function resetForm() {
   form.nama = props.user?.nama ?? "";
   form.email = props.user?.email ?? "";
   form.role = (props.user?.role as UserRole) ?? null;
-  form.is_active = Boolean(props.user?.is_active);
+  form.is_active = Number(props.user?.is_active) === 1;
+  form.branch_id = props.user?.branch_id ?? null;
+
   submitted.value = false;
   formError.value = "";
   serverErrors.value = {};
 }
 
+async function fetchBranches() {
+  loadingBranches.value = true;
+
+  try {
+    branches.value = await getBranches();
+  } catch (error) {
+    branches.value = [];
+    formError.value = getErrorMessage(
+      error,
+      "Gagal memuat daftar cabang",
+    );
+  } finally {
+    loadingBranches.value = false;
+  }
+}
+
 watch(
   () => [visible.value, props.user] as const,
-  ([isVisible]) => {
-    if (isVisible) resetForm();
+  async ([isVisible]) => {
+    if (!isVisible) return;
+
+    resetForm();
+    await fetchBranches();
   },
   { immediate: true },
 );
@@ -78,6 +127,7 @@ async function onSubmit() {
       email: form.email.trim(),
       role: form.role as UserRole,
       is_active: form.is_active,
+      branch_id: form.branch_id,
     });
 
     visible.value = false;
@@ -87,7 +137,10 @@ async function onSubmit() {
     serverErrors.value = errors;
 
     if (Object.keys(errors).length === 0) {
-      formError.value = getErrorMessage(error, "Gagal memperbarui pengguna");
+      formError.value = getErrorMessage(
+        error,
+        "Gagal memperbarui pengguna",
+      );
     }
   } finally {
     saving.value = false;
@@ -96,33 +149,117 @@ async function onSubmit() {
 </script>
 
 <template>
-  <Dialog v-model:visible="visible" modal header="Edit pengguna" class="w-[calc(100vw-2rem)] max-w-md" :draggable="false" :closable="!saving" :close-on-escape="!saving">
-    <form id="edit-user-form" class="flex flex-col gap-4" novalidate @submit.prevent="onSubmit">
+  <Dialog
+    v-model:visible="visible"
+    modal
+    header="Edit pengguna"
+    class="w-[calc(100vw-2rem)] max-w-md"
+    :draggable="false"
+    :closable="!saving"
+    :close-on-escape="!saving"
+  >
+    <form
+      id="edit-user-form"
+      class="flex flex-col gap-4"
+      novalidate
+      @submit.prevent="onSubmit"
+    >
       <Message v-if="formError" severity="error" size="small">
         {{ formError }}
       </Message>
 
       <div class="flex flex-col gap-1.5">
-        <label for="edit-user-nama" class="text-sm font-medium">Nama</label>
-        <InputText id="edit-user-nama" v-model="form.nama" fluid :invalid="!!fieldError('nama')" />
-        <Message v-if="fieldError('nama')" severity="error" size="small" variant="simple">
+        <label for="edit-user-nama" class="text-sm font-medium">
+          Nama
+        </label>
+        <InputText
+          id="edit-user-nama"
+          v-model="form.nama"
+          fluid
+          :invalid="!!fieldError('nama')"
+        />
+        <Message
+          v-if="fieldError('nama')"
+          severity="error"
+          size="small"
+          variant="simple"
+        >
           {{ fieldError("nama") }}
         </Message>
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <label for="edit-user-email" class="text-sm font-medium">Email</label>
-        <InputText id="edit-user-email" v-model="form.email" type="email" fluid :invalid="!!fieldError('email')" />
-        <Message v-if="fieldError('email')" severity="error" size="small" variant="simple">
+        <label for="edit-user-email" class="text-sm font-medium">
+          Email
+        </label>
+        <InputText
+          id="edit-user-email"
+          v-model="form.email"
+          type="email"
+          fluid
+          :invalid="!!fieldError('email')"
+        />
+        <Message
+          v-if="fieldError('email')"
+          severity="error"
+          size="small"
+          variant="simple"
+        >
           {{ fieldError("email") }}
         </Message>
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <label for="edit-user-role" class="text-sm font-medium">Role</label>
-        <Select v-model="form.role" input-id="edit-user-role" :options="roleOptions" option-label="label" option-value="value" placeholder="Pilih role" fluid :invalid="!!fieldError('role')" />
-        <Message v-if="fieldError('role')" severity="error" size="small" variant="simple">
+        <label for="edit-user-role" class="text-sm font-medium">
+          Role
+        </label>
+        <Select
+          v-model="form.role"
+          input-id="edit-user-role"
+          :options="roleOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Pilih role"
+          fluid
+          :invalid="!!fieldError('role')"
+          empty-message="Role tidak tersedia"
+        />
+        <Message
+          v-if="fieldError('role')"
+          severity="error"
+          size="small"
+          variant="simple"
+        >
           {{ fieldError("role") }}
+        </Message>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="edit-user-branch" class="text-sm font-medium">
+          Cabang
+        </label>
+        <Select
+          v-model="form.branch_id"
+          input-id="edit-user-branch"
+          :options="branchOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Pilih cabang"
+          filter
+          show-clear
+          fluid
+          :loading="loadingBranches"
+          :disabled="loadingBranches || branchOptions.length === 0"
+          :invalid="!!fieldError('branch_id')"
+          empty-message="Daftar cabang tidak tersedia"
+        />
+        <Message
+          v-if="fieldError('branch_id')"
+          severity="error"
+          size="small"
+          variant="simple"
+        >
+          {{ fieldError("branch_id") }}
         </Message>
       </div>
 
@@ -138,8 +275,19 @@ async function onSubmit() {
     </form>
 
     <template #footer>
-      <Button label="Batal" variant="text" severity="secondary" :disabled="saving" @click="visible = false" />
-      <Button type="submit" form="edit-user-form" label="Simpan perubahan" :loading="saving" />
+      <Button
+        label="Batal"
+        variant="text"
+        severity="secondary"
+        :disabled="saving"
+        @click="visible = false"
+      />
+      <Button
+        type="submit"
+        form="edit-user-form"
+        label="Simpan perubahan"
+        :loading="saving"
+      />
     </template>
   </Dialog>
 </template>

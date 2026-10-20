@@ -9,12 +9,14 @@ import ResetPasswordDialog from '../components/UserPage/ResetPasswordDialog.vue'
 import EditUserDialog from '../components/UserPage/EditUserDialog.vue'
 
 import { getUsers, type User } from '../api/users'
+import { getBranches, type Branch } from '../api/branches'
 import { getErrorMessage } from '../utils/error'
 
 const editDialogVisible = ref(false)
 const selectedEditUser = ref<User | null>(null)
 
 const users = ref<User[]>([])
+const branches = ref<Branch[]>([])
 const search = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
@@ -22,6 +24,18 @@ const dialogVisible = ref(false)
 
 const resetDialogVisible = ref(false)
 const selectedUser = ref<User | null>(null)
+
+const branchMap = computed(() => {
+  return new Map(
+    branches.value.map((branch) => [String(branch.id), branch.nama]),
+  )
+})
+
+function getBranchName(branchId: number | string | null | undefined) {
+  if (branchId == null) return '-'
+
+  return branchMap.value.get(String(branchId)) ?? `Cabang tidak ditemukan (ID ${branchId})`
+}
 
 function openEditUser(user: User) {
   selectedEditUser.value = user
@@ -39,8 +53,14 @@ const filteredUsers = computed(() => {
   if (!keyword) return users.value
 
   return users.value.filter((user) =>
-    [user.nama, user.username, user.email, user.role].some((value) =>
-      (value ?? '').toLowerCase().includes(keyword),
+    [
+      user.nama,
+      user.username,
+      user.email,
+      user.role,
+      getBranchName(user.branch_id),
+    ].some((value) =>
+      String(value ?? '').toLowerCase().includes(keyword),
     ),
   )
 })
@@ -61,11 +81,22 @@ async function fetchUsers() {
   }
 }
 
+async function fetchBranches() {
+  try {
+    branches.value = await getBranches()
+  } catch {
+    branches.value = []
+  }
+}
+
 function formatRole(role: string) {
   return role.replaceAll('_', ' ')
 }
 
-onMounted(fetchUsers)
+onMounted(() => {
+  fetchUsers()
+  fetchBranches()
+})
 </script>
 
 <template>
@@ -73,6 +104,7 @@ onMounted(fetchUsers)
     <Message v-if="errorMessage" severity="error" :closable="false">
       <div class="flex flex-wrap items-center gap-3">
         <span>{{ errorMessage }}</span>
+
         <Button
           label="Coba lagi"
           size="small"
@@ -90,6 +122,7 @@ onMounted(fetchUsers)
       >
         <div>
           <h2 class="font-semibold">Daftar pengguna</h2>
+
           <p class="mt-1 text-sm text-fg-muted">
             {{ filteredUsers.length }} pengguna ditampilkan
           </p>
@@ -118,7 +151,7 @@ onMounted(fetchUsers)
         v-if="loading && users.length === 0"
         class="flex items-center justify-center gap-3 p-12 text-sm text-fg-muted"
       >
-        <i class="pi pi-spin pi-spinner text-lg" />
+        <i class="pi pi-spin pi-spinner text-lg"></i>
         Memuat daftar pengguna...
       </div>
 
@@ -126,7 +159,7 @@ onMounted(fetchUsers)
         v-else-if="!errorMessage && filteredUsers.length === 0"
         class="flex flex-col items-center justify-center gap-2 p-12 text-center"
       >
-        <i class="pi pi-users text-3xl text-fg-muted" />
+        <i class="pi pi-users text-3xl text-fg-muted"></i>
 
         <p class="font-medium">
           {{ search ? 'Pengguna tidak ditemukan' : 'Belum ada pengguna' }}
@@ -147,13 +180,14 @@ onMounted(fetchUsers)
         :class="loading && 'pointer-events-none opacity-60'"
         :aria-busy="loading"
       >
-        <table class="w-full min-w-[900px] text-left text-sm">
+        <table class="w-full min-w-[1050px] text-left text-sm">
           <thead class="bg-sidebar text-fg-muted">
             <tr>
               <th class="px-5 py-3 font-medium">Nama</th>
               <th class="px-5 py-3 font-medium">Username</th>
               <th class="px-5 py-3 font-medium">Email</th>
               <th class="px-5 py-3 font-medium">Role</th>
+              <th class="px-5 py-3 font-medium">Cabang</th>
               <th class="px-5 py-3 font-medium">Status</th>
               <th class="px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
@@ -185,6 +219,10 @@ onMounted(fetchUsers)
                 </span>
               </td>
 
+              <td class="px-5 py-4 text-fg-muted">
+                {{ getBranchName(user.branch_id) }}
+              </td>
+
               <td class="px-5 py-4">
                 <span
                   class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
@@ -197,7 +235,8 @@ onMounted(fetchUsers)
                   <span
                     class="size-1.5 rounded-full"
                     :class="user.is_active ? 'bg-green-500' : 'bg-red-500'"
-                  />
+                  ></span>
+
                   {{ user.is_active ? 'Aktif' : 'Nonaktif' }}
                 </span>
               </td>
