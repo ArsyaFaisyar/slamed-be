@@ -19,6 +19,7 @@ from app.routers.users import router as user
 from app.routers.branches import router as branches_router
 from app.routers.areas import router as areas_router
 from app.routers.media_pengadaan import router as media_pengadaan_router
+from app.routers.customer_categories import router as customer_categories_router
 
 app = FastAPI(title="Sales Management System API", version="1.0.0")
 
@@ -40,6 +41,7 @@ app.include_router(auth_router)
 app.include_router(profile_router)
 app.include_router(user)
 app.include_router(customers_router)
+app.include_router(customer_categories_router)
 app.include_router(projects_router)
 app.include_router(rkh_router)
 app.include_router(lkh_router)
