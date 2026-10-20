@@ -19,6 +19,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8)
     role: UserRole
     branch_id: Optional[int] = None
+    area_id: Optional[int] = None
 
 
 class UserUpdate(BaseModel):
@@ -26,6 +27,8 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     role: UserRole | None = None
     is_active: bool | None = None
+    branch_id: Optional[int] = None
+    area_id: Optional[int] = None
 
 
 class UserResponse(BaseModel):
@@ -37,6 +40,7 @@ class UserResponse(BaseModel):
     role: str
     is_active: int
     branch_id: Optional[int] = None
+    area_id: Optional[int] = None
 
 class UserPasswordReset(BaseModel):
     password: str = Field(min_length=8)

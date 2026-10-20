@@ -8,20 +8,29 @@ from app.models.user import User
 from app.schemas.users import UserCreate, UserUpdate, UserResponse, UserPasswordReset
 from app.core.security import hash_password
 from app.core.dependencies import get_current_user, require_roles
-
+from app.models.area import Area
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 def validate_branch(db: Session, branch_id: int | None):
     if branch_id is None:
         return
-
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
-
     if not branch:
         raise HTTPException(
             status_code=400,
             detail="Branch tidak ditemukan",
+        )
+def validate_area(db: Session, area_id: int | None):
+    if area_id is None:
+        return
+
+    area = db.query(Area).filter(Area.id == area_id).first()
+
+    if not area:
+        raise HTTPException(
+            status_code=400,
+            detail="Area tidak ditemukan",
         )
 
 @router.get("/", response_model=list[UserResponse])
@@ -37,6 +46,25 @@ def get_users(
 
     return query.order_by(User.id.desc()).all()
 
+@router.get("/by-area/{area_id}", response_model=list[UserResponse])
+def get_sales_by_area(
+    area_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("SUPERADMIN", "SPV")
+    ),
+):
+    area = db.query(Area).filter(Area.id == area_id).first()
+    if not area:
+        raise HTTPException(
+            status_code=404,
+            detail="Area tidak ditemukan",
+        )
+    return db.query(User).filter(
+        User.area_id == area_id,
+        User.role == "SALES",
+        User.is_active == 1,
+    ).order_by(User.nama.asc()).all()
 
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
@@ -93,6 +121,7 @@ def create_user(
         )
 
     validate_branch(db, data.branch_id)
+    validate_area(db, data.area_id)
     user = User(
         nama=data.nama,
         username=data.username,
@@ -101,6 +130,7 @@ def create_user(
         role=data.role,
         is_active=1,
         branch_id=data.branch_id,
+        area_id=data.area_id
     )
 
     db.add(user)
@@ -151,6 +181,9 @@ def update_user(
     if "branch_id" in updates:
         validate_branch(db, updates["branch_id"])
 
+    if "area_id" in updates:
+        validate_area(db, updates["area_id"])
+
     if "email" in updates and updates["email"] is not None:
         updates["email"] = str(updates["email"])
 
@@ -191,15 +224,12 @@ def reset_user_password(
     ),
 ):
     user = db.query(User).filter(User.id == user_id).first()
-
     if not user:
         raise HTTPException(
             status_code=404,
             detail="Pengguna tidak ditemukan",
         )
-
     user.password_hash = hash_password(data.password)
-
     try:
         db.commit()
     except Exception:
@@ -208,5 +238,5 @@ def reset_user_password(
             status_code=500,
             detail="Gagal mengubah password",
         )
-
     return {"message": "Password berhasil diubah"}
+
