@@ -2,7 +2,6 @@ from sqlalchemy import (
     Column, Integer, String, DateTime, ForeignKey
 )
 from sqlalchemy.sql import func
-
 from app.db.database import Base
 
 
@@ -15,7 +14,11 @@ class Customer(Base):
     kontak_pic = Column(String(30), nullable=True)
     kota = Column(String(100), nullable=True)
     kategori = Column(String(50), nullable=True)
-    area = Column(String(100), nullable=True)
+    area_id = Column(
+        Integer,
+        ForeignKey("areas.id"),
+        nullable=True,
+    )
     sales_id = Column(
         Integer,
         ForeignKey("users.id"),
