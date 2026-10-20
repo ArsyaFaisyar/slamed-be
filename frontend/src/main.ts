@@ -16,6 +16,7 @@ import router from "./router";
 import { setUnauthorizedHandler } from "./api/http";
 import { useAuthStore } from "./stores/auth";
 import { applyThemeMode, getInitialThemeMode, primeVueOptions } from "./theme";
+import ConfirmationService from "primevue/confirmationservice";
 
 applyThemeMode(getInitialThemeMode());
 
@@ -25,6 +26,7 @@ app.use(createPinia());
 app.use(router);
 app.use(PrimeVue, primeVueOptions);
 app.directive("tooltip", Tooltip);
+app.use(ConfirmationService);
 
 setUnauthorizedHandler(() => {
   useAuthStore().logout();

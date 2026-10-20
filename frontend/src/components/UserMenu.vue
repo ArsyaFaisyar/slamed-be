@@ -3,11 +3,14 @@ import { computed, ref, watch } from 'vue'
 import Avatar from 'primevue/avatar'
 import Button from 'primevue/button'
 import Popover from 'primevue/popover'
+import ConfirmDialog from 'primevue/confirmdialog'
+import { useConfirm } from 'primevue/useconfirm'
 import { getInitials } from '../utils/format'
 
 const props = defineProps<{ name: string; role: string; image?: string }>()
 const emit = defineEmits<{ profile: []; logout: [] }>()
 
+const confirm = useConfirm()
 const popover = ref<InstanceType<typeof Popover>>()
 const open = ref(false)
 const imageFailed = ref(false)
@@ -36,9 +39,25 @@ function goProfile() {
   emit('profile')
 }
 
-function logout() {
+function confirmLogout() {
   popover.value?.hide()
-  emit('logout')
+  confirm.require({
+    header: 'Konfirmasi Keluar',
+    message: 'Apakah Anda yakin ingin keluar dari aplikasi?',
+    icon: 'pi pi-exclamation-triangle',
+    rejectProps: {
+      label: 'Batal',
+      severity: 'secondary',
+      variant: 'text',
+    },
+    acceptProps: {
+      label: 'Keluar',
+      severity: 'danger',
+    },
+    accept: () => {
+      emit('logout')
+    },
+  })
 }
 </script>
 
@@ -90,8 +109,10 @@ function logout() {
         severity="secondary"
         fluid
         class="justify-start"
-        @click="logout"
+        @click="confirmLogout"
       />
     </div>
   </Popover>
+
+  <ConfirmDialog />
 </template>

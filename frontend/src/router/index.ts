@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from "vue-router";
 import { menu } from "../constant/menu";
 import { useAuthStore } from "../stores/auth";
+import { canAccessRoute } from "../constant/permissions";
 
 const leaves = menu.flatMap((item) => {
   if (item.children) return item.children;
@@ -8,9 +9,18 @@ const leaves = menu.flatMap((item) => {
   return item.to ? [{ label: item.label, title: item.title, to: item.to }] : [];
 });
 
+const viewLoaders: Record<string, () => Promise<unknown>> = {
+  "/master/user": () => import("../views/UsersView.vue"),
+  "/master/branch": () => import("../views/BranchesView.vue"),
+  "/master/media-pengadaan": () => import("../views/MediaPengadaanView.vue"),
+  "/master/area": () => import("../views/AreaView.vue"),
+  "/transaksi/customer": () => import("../views/CustomersView.vue"),
+  "/transaksi/project": () => import("../views/ProjectsView.vue"),
+};
+
 const pages: RouteRecordRaw[] = leaves.map((leaf) => ({
   path: leaf.to,
-  component: leaf.to === "/master/user" ? () => import("../views/UsersView.vue") : () => import("../views/PlaceholderView.vue"),
+  component: viewLoaders[leaf.to] ?? (() => import("../views/PlaceholderView.vue")),
   meta: { title: leaf.title ?? leaf.label },
 }));
 
@@ -28,6 +38,11 @@ const router = createRouter({
           path: "/profile",
           component: () => import("../views/ProfileView.vue"),
           meta: { title: "Profil" },
+        },
+        {
+          path: "/master/branch/:id",
+          component: () => import("../views/BranchDetailView.vue"),
+          meta: { title: "Detail Cabang" },
         },
       ],
     },
@@ -54,11 +69,21 @@ router.beforeEach(async (to) => {
     try {
       await auth.fetchMe();
     } catch {
-      if (!auth.isAuthenticated && to.meta.requiresAuth) {
-        return { name: "login" };
-      }
+      auth.logout();
+      return { name: "login" };
     }
   }
+
+  if (to.meta.requiresAuth && auth.user) {
+    const role = auth.user.role;
+
+    if (typeof role !== "string" || !canAccessRoute(to.path, role)) {
+      return "/dashboard";
+    }
+  }
+
+  // 5. Izinkan navigasi
+  return true;
 });
 
 export default router;
