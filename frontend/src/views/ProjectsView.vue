@@ -49,7 +49,7 @@ const filteredProjects = computed(() => {
 
   return projects.value.filter((project) =>
     [project.nama_project, project.jenis, project.status, project.deskripsi, customerName(project)].some(
-      (value) => (value ?? '').toLowerCase().includes(keyword),
+      (value) => String(value ?? '').toLowerCase().includes(keyword),
     ),
   )
 })
