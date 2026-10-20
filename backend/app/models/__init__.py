@@ -8,3 +8,4 @@ from app.models.branch import Branch
 from app.models.area import Area
 from app.models.media_pengadaan import MediaPengadaan
 from app.models.customer import Customer
+from app.models.customer_category import CustomerCategory
