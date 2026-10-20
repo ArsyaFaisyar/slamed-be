@@ -10,7 +10,6 @@ class AreaUpdate(BaseModel):
     target: float | None = Field(default=None, ge=0)
 class AreaResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-
     id: int
     nama: str
     spv_id: int
