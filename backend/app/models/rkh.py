@@ -5,7 +5,6 @@ from sqlalchemy import (
 from sqlalchemy.sql import func
 from app.db.database import Base
 
-
 class RKH(Base):
     __tablename__ = "rkh"
     id = Column(Integer, primary_key=True, index=True)

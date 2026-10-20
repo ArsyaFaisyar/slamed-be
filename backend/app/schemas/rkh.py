@@ -14,7 +14,6 @@ class RKHCreate(BaseModel):
     tipe_aktivitas: str
     estimasi_biaya_harian: Decimal = Decimal("0")
 
-
 class RKHUpdate(BaseModel):
     customer_id: Optional[int] = None
     project_id: Optional[int] = None
@@ -25,7 +24,6 @@ class RKHUpdate(BaseModel):
     tipe_aktivitas: Optional[str] = None
     estimasi_biaya_harian: Optional[Decimal] = None
     status: Optional[str] = None
-
 
 class RKHResponse(BaseModel):
     id: int

@@ -8,16 +8,14 @@ class ProjectProspekCreate(BaseModel):
     nama_project: str
     jenis: str = "PROSPEK"
     deskripsi: Optional[str] = None
-    status: str = "BARU"
-
+    status_id: Optional[int] = None
 
 class ProjectProspekUpdate(BaseModel):
     customer_id: Optional[int] = None
     nama_project: Optional[str] = None
     jenis: Optional[str] = None
     deskripsi: Optional[str] = None
-    status: Optional[str] = None
-
+    status_id: Optional[int] = None
 
 class ProjectProspekResponse(BaseModel):
     id: int
@@ -25,7 +23,7 @@ class ProjectProspekResponse(BaseModel):
     nama_project: str
     jenis: str
     deskripsi: Optional[str] = None
-    status: str
+    status_id: Optional[int] = None
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)

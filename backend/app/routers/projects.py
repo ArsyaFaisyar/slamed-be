@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
@@ -14,7 +13,6 @@ from app.schemas.project_prospek import (
 from app.core.dependencies import get_current_user, require_roles
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
-
 
 def get_project_query(db: Session, current_user: User):
     query = db.query(ProjectProspek)

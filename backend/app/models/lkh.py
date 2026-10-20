@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, Integer, String, Date, DateTime,
+    Column, Integer, Date, DateTime,
     Text, Numeric, ForeignKey
 )
 from sqlalchemy.sql import func
@@ -21,7 +21,11 @@ class LKH(Base):
     tanggal_kunjungan = Column(Date, nullable=False)
 
     hasil_kunjungan = Column(Text, nullable=False)
-    status_prospek = Column(String(30), nullable=True)
+    status_id = Column(
+        Integer,
+        ForeignKey("project_statuses.id"),
+        nullable=True,
+    )
     tindak_lanjut = Column(Text, nullable=True)
 
     latitude = Column(Numeric(10, 7), nullable=True)
