@@ -8,6 +8,7 @@ from fastapi import (
     File,
     HTTPException,
     UploadFile,
+    Form
 )
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -66,9 +67,42 @@ def upload_attachment(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    jenis: str = Form(...)
 ):
     get_accessible_lkh(lkh_id, db, current_user)
+    if jenis not in ("FOTO", "LAMPIRAN"):
+        raise HTTPException(400, "Jenis file harus FOTO atau LAMPIRAN")
 
+    if jenis == "FOTO":
+        allowed_types = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/gif": ".gif",
+        }
+        max_size = 2 * 1024 * 1024
+    else:
+        allowed_types = {
+            "application/pdf": ".pdf",
+            "application/msword": ".doc",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+            "application/vnd.ms-excel": ".xls",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+        }
+        max_size = 5 * 1024 * 1024
+
+    extension = allowed_types.get(file.content_type)
+
+    if not extension:
+        raise HTTPException(400, "Format file tidak sesuai jenisnya")
+
+    if jenis == "FOTO":
+        existing_foto = db.query(LKHAttachment).filter(
+            LKHAttachment.lkh_id == lkh_id,
+            LKHAttachment.jenis == "FOTO",
+        ).first()
+
+    if existing_foto:
+        raise HTTPException(409, "Foto kunjungan sudah diunggah")
     extension = ALLOWED_TYPES.get(file.content_type)
 
     if not extension:
@@ -77,13 +111,15 @@ def upload_attachment(
             "Format file harus JPG, PNG, atau PDF",
         )
 
-    content = file.file.read(MAX_FILE_SIZE + 1)
-
+    content = file.file.read(max_size + 1)
     if not content:
         raise HTTPException(400, "File kosong")
+    if len(content) > max_size:
+        raise HTTPException(413, "Ukuran file melebihi batas")
 
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(413, "Ukuran file maksimal 5 MB")
+    if jenis == "FOTO":
+        laporan = get_accessible_lkh(lkh_id, db, current_user)
+        laporan.status_lkh = "DONE"
 
     filename = f"{uuid4().hex}{extension}"
     destination = UPLOAD_DIR / filename
@@ -96,7 +132,9 @@ def upload_attachment(
             nama_file=Path(file.filename or "lampiran").name,
             file_url=filename,
             tipe_file=file.content_type,
+            jenis=jenis,
         )
+        
 
         db.add(attachment)
         db.commit()
@@ -112,6 +150,7 @@ def upload_attachment(
         "lkh_id": attachment.lkh_id,
         "nama_file": attachment.nama_file,
         "tipe_file": attachment.tipe_file,
+        "jenis": attachment.jenis,
         "url": f"/lkh/attachments/{attachment.id}/file",
     }
 
@@ -130,16 +169,11 @@ def get_attachment(
         raise HTTPException(404, "Lampiran tidak ditemukan")
 
     get_accessible_lkh(attachment.lkh_id, db, current_user)
-
-    # Pastikan file tetap berada di direktori upload.
     path = (UPLOAD_DIR / attachment.file_url).resolve()
-
     if path.parent != UPLOAD_DIR.resolve():
         raise HTTPException(400, "Lokasi file tidak valid")
-
     if not path.is_file():
         raise HTTPException(404, "File tidak ditemukan")
-
     return FileResponse(
         path,
         media_type=attachment.tipe_file,
@@ -166,6 +200,7 @@ def list_attachments(
             "nama_file": item.nama_file,
             "tipe_file": item.tipe_file,
             "url": f"/lkh/attachments/{item.id}/file",
+            "jenis": item.jenis
         }
         for item in attachments
     ]
