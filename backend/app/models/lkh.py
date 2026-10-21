@@ -19,7 +19,7 @@ class LKH(Base):
         nullable=False
     )
     tanggal_kunjungan = Column(Date, nullable=False)
-
+    tanggal_follow_up = Column(Date, nullable=True)
     hasil_kunjungan = Column(Text, nullable=False)
     status_lkh = Column(
         String(20),

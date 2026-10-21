@@ -96,49 +96,7 @@ def create_lkh(
     if existing:
         raise HTTPException(409, "RKH ini sudah memiliki laporan kunjungan")
 
-    allowed_photo = {"image/jpeg", "image/png", "image/gif"}
-    allowed_attachment = {
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }
-
-    if foto.content_type not in allowed_photo:
-        raise HTTPException(400, "Foto harus JPG, PNG, atau GIF")
-
-    if file_lampiran and file_lampiran.content_type not in allowed_attachment:
-        raise HTTPException(400, "Lampiran harus PDF, DOC, DOCX, XLS, atau XLSX")
-
-    upload_dir = Path("uploads/lkh")
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    saved_files = []
-
     try:
-        def save_upload(upload: UploadFile, max_size: int) -> str:
-            extension = Path(upload.filename or "").suffix.lower()
-            content = upload.file.read(max_size + 1)
-
-            if len(content) > max_size:
-                raise HTTPException(400, "Ukuran file terlalu besar")
-
-            filename = f"{uuid.uuid4().hex}{extension}"
-            destination = upload_dir / filename
-            destination.write_bytes(content)
-            saved_files.append(destination)
-
-            return str(destination).replace("\\", "/")
-
-        foto_path = save_upload(foto, 2 * 1024 * 1024)
-
-        lampiran_path = None
-        if file_lampiran:
-            lampiran_path = save_upload(
-                file_lampiran,
-                5 * 1024 * 1024,
-            )
 
         laporan = LKH(
             rkh_id=rkh.id,
@@ -151,8 +109,6 @@ def create_lkh(
             tanggal_follow_up=tanggal_follow_up,
             latitude=latitude,
             longitude=longitude,
-            foto_path=foto_path,
-            file_lampiran_path=lampiran_path,
         )
 
         db.add(laporan)
@@ -164,10 +120,6 @@ def create_lkh(
 
     except Exception:
         db.rollback()
-
-        for path in saved_files:
-            path.unlink(missing_ok=True)
-
         raise
 
     finally:
