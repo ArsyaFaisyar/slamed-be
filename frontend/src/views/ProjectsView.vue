@@ -5,17 +5,26 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
 
-import ProjectFormDialog, { type CustomerOption } from '../components/ProjectPage/ProjectFormDialog.vue'
+import ProjectFormDialog, {
+  type CustomerOption,
+  type SalesOption,
+} from '../components/ProjectPage/ProjectFormDialog.vue'
 
 import { deleteProject, getProjects, type Project } from '../api/projects'
 import { getCustomers, type Customer } from '../api/customers'
+import { getUsers, type User } from '../api/users'
+import type { UserRole } from '../constant/roles'
 import { getProjectStatuses, type ProjectStatus } from '../api/projectStatuses'
 import { getErrorMessage } from '../utils/error'
+import { parseDateString } from '../utils/date'
 
 const confirm = useConfirm()
 
+const SALES_ROLE: UserRole = 'SALES'
+
 const projects = ref<Project[]>([])
 const customers = ref<Customer[]>([])
+const users = ref<User[]>([])
 const statuses = ref<ProjectStatus[]>([])
 const search = ref('')
 const loading = ref(false)
@@ -26,6 +35,11 @@ const formVisible = ref(false)
 const selectedEdit = ref<Project | null>(null)
 
 const dateFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' })
+const rupiahFormat = new Intl.NumberFormat('id-ID', {
+  style: 'currency',
+  currency: 'IDR',
+  maximumFractionDigits: 0,
+})
 
 const customerOptions = computed<CustomerOption[]>(() =>
   customers.value.map((customer) => ({ value: customer.id, label: customer.nama_instansi })),
@@ -35,10 +49,22 @@ const customerNames = computed(
   () => new Map(customers.value.map((customer) => [customer.id, customer.nama_instansi])),
 )
 
+const salesOptions = computed<SalesOption[]>(() =>
+  users.value
+    .filter((user) => user.role === SALES_ROLE && user.is_active)
+    .map((user) => ({ value: user.id, label: user.nama })),
+)
+
+const userNames = computed(() => new Map(users.value.map((user) => [user.id, user.nama])))
+
 const statusMap = computed(() => new Map(statuses.value.map((status) => [status.id, status])))
 
 function customerName(project: Project) {
   return customerNames.value.get(project.customer_id) ?? `ID ${project.customer_id}`
+}
+
+function salesName(project: Project) {
+  return userNames.value.get(project.sales_id) ?? `ID ${project.sales_id}`
 }
 
 function statusName(project: Project) {
@@ -65,13 +91,24 @@ function formatDate(value: string) {
   return Number.isNaN(date.getTime()) ? '-' : dateFormat.format(date)
 }
 
+function formatClosing(value: string | null) {
+  const date = parseDateString(value)
+  return date ? dateFormat.format(date) : '-'
+}
+
+function formatRupiah(value: string | null) {
+  if (value === null || value === undefined || value === '') return '-'
+  const amount = Number(value)
+  return Number.isNaN(amount) ? '-' : rupiahFormat.format(amount)
+}
+
 const filteredProjects = computed(() => {
   const keyword = search.value.trim().toLowerCase()
 
   if (!keyword) return projects.value
 
   return projects.value.filter((project) =>
-    [project.nama_project, project.jenis, statusName(project), project.deskripsi, customerName(project)].some(
+    [project.nama_project, statusName(project), project.deskripsi, customerName(project), salesName(project)].some(
       (value) => String(value ?? '').toLowerCase().includes(keyword),
     ),
   )
@@ -142,10 +179,19 @@ function confirmDelete(project: Project) {
   })
 }
 
+async function fetchUsers() {
+  try {
+    users.value = await getUsers()
+  } catch {
+    users.value = []
+  }
+}
+
 onMounted(() => {
   fetchProjects()
   fetchCustomers()
   fetchStatuses()
+  fetchUsers()
 })
 </script>
 
@@ -222,12 +268,14 @@ onMounted(() => {
         :class="loading && 'pointer-events-none opacity-60'"
         :aria-busy="loading"
       >
-        <table class="w-full min-w-[1000px] text-left text-sm">
+        <table class="w-full min-w-[1200px] text-left text-sm">
           <thead class="bg-sidebar text-fg-muted">
             <tr>
               <th class="px-5 py-3 font-medium">Project</th>
               <th class="px-5 py-3 font-medium">Customer</th>
-              <th class="px-5 py-3 font-medium">Jenis</th>
+              <th class="px-5 py-3 font-medium">Sales</th>
+              <th class="px-5 py-3 text-right font-medium">Nilai proyek</th>
+              <th class="px-5 py-3 font-medium">Estimasi closing</th>
               <th class="px-5 py-3 font-medium">Status</th>
               <th class="px-5 py-3 font-medium">Dibuat</th>
               <th class="px-5 py-3 text-center font-medium">Aksi</th>
@@ -249,7 +297,15 @@ onMounted(() => {
 
               <td class="px-5 py-4 text-fg-muted">{{ customerName(project) }}</td>
 
-              <td class="px-5 py-4 text-fg-muted">{{ project.jenis || '-' }}</td>
+              <td class="px-5 py-4 text-fg-muted">{{ salesName(project) }}</td>
+
+              <td class="whitespace-nowrap px-5 py-4 text-right tabular-nums">
+                {{ formatRupiah(project.nilai_proyek) }}
+              </td>
+
+              <td class="whitespace-nowrap px-5 py-4 text-fg-muted">
+                {{ formatClosing(project.estimasi_closing) }}
+              </td>
 
               <td class="px-5 py-4">
                 <span
@@ -305,6 +361,7 @@ onMounted(() => {
       v-model:visible="formVisible"
       :project="selectedEdit"
       :customer-options="customerOptions"
+      :sales-options="salesOptions"
       @saved="fetchProjects"
     />
   </div>
