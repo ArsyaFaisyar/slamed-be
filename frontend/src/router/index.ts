@@ -17,6 +17,7 @@ const viewLoaders: Record<string, () => Promise<unknown>> = {
   "/transaksi/customer": () => import("../views/CustomersView.vue"),
   "/transaksi/project": () => import("../views/ProjectsView.vue"),
   "/master/kategori-customer": () => import("../views/CustomerCategoriesView.vue"),
+  "/master/status-project": () => import("../views/ProjectStatusesView.vue"),
   "/aktivitas/rkh": () => import("../views/RkhView.vue"),
 };
 

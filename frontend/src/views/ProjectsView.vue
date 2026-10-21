@@ -7,14 +7,16 @@ import { useConfirm } from 'primevue/useconfirm'
 
 import ProjectFormDialog, { type CustomerOption } from '../components/ProjectPage/ProjectFormDialog.vue'
 
-import { deleteProject, getProjects, type Project } from '../api/projects.ts'
+import { deleteProject, getProjects, type Project } from '../api/projects'
 import { getCustomers, type Customer } from '../api/customers'
+import { getProjectStatuses, type ProjectStatus } from '../api/projectStatuses'
 import { getErrorMessage } from '../utils/error'
 
 const confirm = useConfirm()
 
 const projects = ref<Project[]>([])
 const customers = ref<Customer[]>([])
+const statuses = ref<ProjectStatus[]>([])
 const search = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
@@ -33,8 +35,29 @@ const customerNames = computed(
   () => new Map(customers.value.map((customer) => [customer.id, customer.nama_instansi])),
 )
 
+const statusMap = computed(() => new Map(statuses.value.map((status) => [status.id, status])))
+
 function customerName(project: Project) {
   return customerNames.value.get(project.customer_id) ?? `ID ${project.customer_id}`
+}
+
+function statusName(project: Project) {
+  if (project.status_id === null || project.status_id === undefined) return ''
+  return statusMap.value.get(project.status_id)?.nama ?? ''
+}
+
+function statusColor(project: Project) {
+  if (project.status_id === null || project.status_id === undefined) return null
+  return statusMap.value.get(project.status_id)?.warna ?? null
+}
+
+function statusTextColor(project: Project) {
+  const hex = statusColor(project)
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return undefined
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#111827' : '#FFFFFF'
 }
 
 function formatDate(value: string) {
@@ -48,7 +71,7 @@ const filteredProjects = computed(() => {
   if (!keyword) return projects.value
 
   return projects.value.filter((project) =>
-    [project.nama_project, project.jenis, project.status, project.deskripsi, customerName(project)].some(
+    [project.nama_project, project.jenis, statusName(project), project.deskripsi, customerName(project)].some(
       (value) => String(value ?? '').toLowerCase().includes(keyword),
     ),
   )
@@ -85,6 +108,14 @@ async function fetchCustomers() {
   }
 }
 
+async function fetchStatuses() {
+  try {
+    statuses.value = await getProjectStatuses()
+  } catch {
+    statuses.value = []
+  }
+}
+
 function confirmDelete(project: Project) {
   confirm.require({
     header: 'Hapus Project',
@@ -114,6 +145,7 @@ function confirmDelete(project: Project) {
 onMounted(() => {
   fetchProjects()
   fetchCustomers()
+  fetchStatuses()
 })
 </script>
 
@@ -220,7 +252,18 @@ onMounted(() => {
               <td class="px-5 py-4 text-fg-muted">{{ project.jenis || '-' }}</td>
 
               <td class="px-5 py-4">
-                  {{ project.status }}
+                <span
+                  v-if="statusName(project)"
+                  class="inline-flex items-center rounded-md border border-line px-2.5 py-1 text-xs font-medium"
+                  :style="
+                    statusColor(project)
+                      ? { backgroundColor: statusColor(project) ?? undefined, color: statusTextColor(project), borderColor: statusColor(project) ?? undefined }
+                      : undefined
+                  "
+                >
+                  {{ statusName(project) }}
+                </span>
+                <span v-else class="text-fg-muted">-</span>
               </td>
 
               <td class="px-5 py-4 text-fg-muted">{{ formatDate(project.created_at) }}</td>
