@@ -17,6 +17,8 @@ import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
 import 'package:slamed_app/features/rkh/presentation/controllers/rkh_controller.dart';
 import 'package:slamed_app/features/rkh/presentation/controllers/rkh_form_controller.dart';
 import 'package:slamed_app/features/rkh/presentation/pages/rkh_form_page.dart';
+import 'package:slamed_app/features/project/presentation/controllers/prospect_controller.dart';
+
 
 abstract final class AppPages {
   static final pages = <GetPage<dynamic>>[
@@ -38,6 +40,10 @@ abstract final class AppPages {
         );
         Get.lazyPut(
           () => LkhController(Get.find<AuthController>(), Get.find<RkhRepository>(), Get.find<LkhRepository>(), Get.find<CustomerRepository>()),
+          fenix: true,
+        );
+        Get.lazyPut(
+          () => ProspectController(Get.find<ProjectRepository>(), Get.find<CustomerRepository>()),
           fenix: true,
         );
       }),

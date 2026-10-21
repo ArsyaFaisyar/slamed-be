@@ -9,6 +9,8 @@ import 'package:slamed_app/features/profile/presentation/pages/profile_page.dart
 import 'package:slamed_app/features/project/presentation/pages/prospect_page.dart';
 import 'package:slamed_app/features/rkh/presentation/controllers/rkh_controller.dart';
 import 'package:slamed_app/features/rkh/presentation/pages/rkh_page.dart';
+import 'package:slamed_app/features/project/presentation/controllers/prospect_controller.dart';
+
 
 class NavItem {
   const NavItem(this.label, this.icon, this.selectedIcon, this.page, {this.onShow});
@@ -46,8 +48,8 @@ class HomeController extends GetxController {
             onShow: () => Get.find<RkhController>().load()),
         NavItem('LKH', Icons.fact_check_outlined, Icons.fact_check_rounded, const LkhPage(),
             onShow: () => Get.find<LkhController>().load()),
-        const NavItem('Prospek', Icons.trending_up, Icons.trending_up_rounded, ProspectPage()),
-        profile,
+        NavItem('Prospek', Icons.trending_up, Icons.trending_up_rounded, const ProspectPage(),
+            onShow: () => Get.find<ProspectController>().load()),
       ];
     }
     // SUPERADMIN, PPIC, ADMIN_*: menunggu endpoint di OpenAPI.
