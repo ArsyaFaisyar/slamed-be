@@ -35,7 +35,12 @@ class RKH(Base):
         nullable=False,
         default=0
     )
-    status = Column(String(30), nullable=False, default="DRAFT")
+    status = Column(
+    String(30),
+        nullable=False,
+        default="OPEN",
+        server_default="OPEN",
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),

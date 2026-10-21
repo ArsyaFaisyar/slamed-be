@@ -156,6 +156,7 @@ def create_lkh(
         )
 
         db.add(laporan)
+        rkh.status = "CLOSED"
         db.commit()
         db.refresh(laporan)
 
