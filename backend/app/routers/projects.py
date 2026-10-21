@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.customer import Customer
 from app.models.project_prospek import ProjectProspek
+from app.models.project_status import ProjectStatus
 from app.models.user import User
 from app.schemas.project_prospek import (
     ProjectProspekCreate,
@@ -21,7 +22,7 @@ def get_project_query(db: Session, current_user: User):
         query = query.join(
             Customer,
             ProjectProspek.customer_id == Customer.id,
-        ).filter(Customer.sales_id == current_user.id)
+        ).filter(ProjectProspek.sales_id == current_user.id)
 
     elif current_user.role not in ("SUPERADMIN", "SPV"):
         raise HTTPException(
@@ -84,8 +85,39 @@ def create_project(
             status_code=404,
             detail="Customer tidak ditemukan",
         )
+    sales = db.query(User).filter(
+        User.id == data.sales_id,
+        User.role == "SALES",
+    ).first()
 
-    project = ProjectProspek(**data.model_dump())
+    if not sales:
+        raise HTTPException(
+            status_code=404,
+            detail="Sales tidak ditemukan",
+        )
+    
+    initial_status = (
+        db.query(ProjectStatus)
+        .filter(ProjectStatus.is_active == True)
+        .order_by(ProjectStatus.urutan.asc())
+        .first()
+    )
+
+    if not initial_status:
+        raise HTTPException(
+            status_code=400,
+            detail="Belum ada status project aktif"
+        )
+
+    project = ProjectProspek(
+        customer_id=data.customer_id,
+        nama_project=data.nama_project,
+        nilai_proyek=data.nilai_proyek,
+        estimasi_closing=data.estimasi_closing,
+        sales_id=data.sales_id,
+        status_id=initial_status.id,
+    )
+
     db.add(project)
     db.commit()
     db.refresh(project)
