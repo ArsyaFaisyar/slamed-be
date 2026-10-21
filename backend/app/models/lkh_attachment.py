@@ -18,3 +18,9 @@ class LKHAttachment(Base):
         DateTime(timezone=True),
         server_default=func.now()
     )
+    jenis = Column(
+        String(20),
+        nullable=False,
+        default="LAMPIRAN",
+        server_default="LAMPIRAN",
+    )
