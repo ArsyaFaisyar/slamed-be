@@ -21,18 +21,16 @@ const props = defineProps<{
   projectOptions: ProjectOption[];
 }>();
 
+const maxDate = computed(() => {
+  const baseDate = form.tanggal_rencana ? new Date(form.tanggal_rencana) : new Date()
+  const max = new Date(baseDate)
+  max.setDate(max.getDate() + 7)
+  return max
+})
+
 const emit = defineEmits<{ created: [] }>();
 
-const fields = [
-  "customer_id",
-  "project_id",
-  "tanggal_rencana",
-  "tanggal_pelaksanaan",
-  "judul_kegiatan",
-  "rencana_kegiatan",
-  "tipe_aktivitas",
-  "estimasi_biaya_harian",
-] as const;
+const fields = ["customer_id", "project_id", "tanggal_rencana", "tanggal_pelaksanaan", "judul_kegiatan", "rencana_kegiatan", "tipe_aktivitas", "estimasi_biaya_harian"] as const;
 type Field = (typeof fields)[number];
 
 function emptyForm() {
@@ -49,6 +47,7 @@ function emptyForm() {
 }
 
 const form = reactive(emptyForm());
+const today = new Date();
 const submitted = ref(false);
 const saving = ref(false);
 const formError = ref("");
@@ -56,12 +55,7 @@ const serverErrors = ref<Record<string, string>>({});
 
 const safeCustomerOptions = computed<Option[]>(() =>
   (Array.isArray(props.customerOptions) ? props.customerOptions : [])
-    .filter(
-      (option) =>
-        option &&
-        option.value != null &&
-        typeof option.label === "string",
-    )
+    .filter((option) => option && option.value != null && typeof option.label === "string")
     .map((option) => ({
       ...option,
       value: Number(option.value),
@@ -70,12 +64,7 @@ const safeCustomerOptions = computed<Option[]>(() =>
 
 const safeProjectOptions = computed<ProjectOption[]>(() =>
   (Array.isArray(props.projectOptions) ? props.projectOptions : [])
-    .filter(
-      (project) =>
-        project &&
-        project.value != null &&
-        typeof project.label === "string",
-    )
+    .filter((project) => project && project.value != null && typeof project.label === "string")
     .map((project) => ({
       ...project,
       value: Number(project.value),
@@ -83,11 +72,7 @@ const safeProjectOptions = computed<ProjectOption[]>(() =>
     })),
 );
 
-const filteredProjects = computed(() =>
-  safeProjectOptions.value.filter(
-    (project) => project.customer_id === form.customer_id,
-  ),
-);
+const filteredProjects = computed(() => safeProjectOptions.value.filter((project) => project.customer_id === form.customer_id));
 
 watch(
   () => form.customer_id,
@@ -106,12 +91,7 @@ const clientErrors = computed<Record<Field, string>>(() => ({
   judul_kegiatan: form.judul_kegiatan.trim() ? "" : "Judul kegiatan wajib diisi",
   rencana_kegiatan: form.rencana_kegiatan.trim() ? "" : "Rencana kegiatan wajib diisi",
   tipe_aktivitas: form.tipe_aktivitas ? "" : "Tipe aktivitas wajib dipilih",
-  estimasi_biaya_harian:
-    form.estimasi_biaya_harian === null
-      ? "Estimasi biaya wajib diisi"
-      : form.estimasi_biaya_harian < 0
-        ? "Estimasi biaya tidak boleh negatif"
-        : "",
+  estimasi_biaya_harian: form.estimasi_biaya_harian === null ? "Estimasi biaya wajib diisi" : form.estimasi_biaya_harian < 0 ? "Estimasi biaya tidak boleh negatif" : "",
 }));
 
 function fieldError(field: Field) {
@@ -179,7 +159,17 @@ async function onSubmit() {
 
         <div class="flex flex-col gap-1.5">
           <label for="rkh-project" class="text-sm font-medium">Project</label>
-          <Select v-model="form.project_id" input-id="rkh-project" :options="filteredProjects" option-label="label" option-value="value" :placeholder="form.customer_id ? 'Pilih project' : 'Pilih customer dulu'" :disabled="!form.customer_id" filter fluid :invalid="!!fieldError('project_id')" />
+          <Select
+            v-model="form.project_id"
+            input-id="rkh-project"
+            :options="filteredProjects"
+            option-label="label"
+            option-value="value"
+            :placeholder="form.customer_id ? 'Pilih project' : 'Pilih customer dulu'"
+            :disabled="!form.customer_id"
+            filter
+            fluid
+            :invalid="!!fieldError('project_id')" />
           <Message v-if="fieldError('project_id')" severity="error" size="small" variant="simple">
             {{ fieldError("project_id") }}
           </Message>
@@ -189,7 +179,7 @@ async function onSubmit() {
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5">
           <label for="rkh-tanggal-rencana" class="text-sm font-medium">Tanggal rencana</label>
-          <DatePicker v-model="form.tanggal_rencana" input-id="rkh-tanggal-rencana" date-format="dd/mm/yy" show-icon fluid :invalid="!!fieldError('tanggal_rencana')" />
+          <DatePicker v-model="form.tanggal_rencana" input-id="rkh-tanggal-rencana" date-format="dd/mm/yy" show-icon fluid :min-date="today" :invalid="!!fieldError('tanggal_rencana')" />
           <Message v-if="fieldError('tanggal_rencana')" severity="error" size="small" variant="simple">
             {{ fieldError("tanggal_rencana") }}
           </Message>
@@ -197,7 +187,17 @@ async function onSubmit() {
 
         <div class="flex flex-col gap-1.5">
           <label for="rkh-tanggal-pelaksanaan" class="text-sm font-medium">Tanggal pelaksanaan</label>
-          <DatePicker v-model="form.tanggal_pelaksanaan" input-id="rkh-tanggal-pelaksanaan" date-format="dd/mm/yy" show-icon show-button-bar fluid :invalid="!!fieldError('tanggal_pelaksanaan')" />
+          <DatePicker 
+            v-model="form.tanggal_pelaksanaan" 
+            input-id="rkh-tanggal-pelaksanaan" 
+            date-format="dd/mm/yy" 
+            show-icon 
+            show-button-bar 
+            fluid 
+            :min-date="form.tanggal_rencana || today"
+            :max-date="maxDate"
+            :invalid="!!fieldError('tanggal_pelaksanaan')" 
+          />
           <Message v-if="fieldError('tanggal_pelaksanaan')" severity="error" size="small" variant="simple">
             {{ fieldError("tanggal_pelaksanaan") }}
           </Message>

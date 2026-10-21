@@ -19,6 +19,7 @@ const viewLoaders: Record<string, () => Promise<unknown>> = {
   "/master/kategori-customer": () => import("../views/CustomerCategoriesView.vue"),
   "/master/status-project": () => import("../views/ProjectStatusesView.vue"),
   "/aktivitas/rkh": () => import("../views/RkhView.vue"),
+  "/aktivitas/lkh": () => import("../views/LkhView.vue"),
 };
 
 const pages: RouteRecordRaw[] = leaves.map((leaf) => ({
