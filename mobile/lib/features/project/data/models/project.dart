@@ -12,12 +12,13 @@ class Project {
   final String namaProject, jenis, status;
   final String? deskripsi;
 
+  /// Toleran terhadap field null/tipe angka berbeda dari backend.
   factory Project.fromJson(Map<String, dynamic> j) => Project(
-        id: j['id'] as int,
-        customerId: j['customer_id'] as int,
-        namaProject: j['nama_project'] as String,
-        jenis: j['jenis'] as String,
-        status: j['status'] as String,
-        deskripsi: j['deskripsi'] as String?,
+        id: (j['id'] as num).toInt(),
+        customerId: (j['customer_id'] as num?)?.toInt() ?? 0,
+        namaProject: (j['nama_project'] ?? '-').toString(),
+        jenis: (j['jenis'] ?? '-').toString(),
+        status: (j['status'] ?? '').toString(),
+        deskripsi: j['deskripsi']?.toString(),
       );
 }
