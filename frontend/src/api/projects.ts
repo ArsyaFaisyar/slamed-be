@@ -6,14 +6,14 @@ export interface Project {
   nama_project: string;
   jenis: string | null;
   deskripsi: string | null;
-  status: string | null;
+  status_id: number | null;
   created_at: string;
 }
 
 export type ProjectInput = {
   customer_id: number;
   nama_project: string;
-} & Partial<Record<"jenis" | "deskripsi" | "status", string | null>>;
+} & Partial<Record<"jenis" | "deskripsi", string | null>> & { status_id?: number | null };
 
 export type ProjectUpdate = Partial<ProjectInput>;
 
