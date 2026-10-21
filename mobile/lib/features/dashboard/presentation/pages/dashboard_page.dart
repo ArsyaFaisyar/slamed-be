@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:slamed_app/app/app_routes.dart';
+import 'package:slamed_app/core/constants/roles.dart';
 import 'package:slamed_app/core/theme/app_colors.dart';
 import 'package:slamed_app/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:slamed_app/shared/widgets/app_card.dart';
@@ -34,25 +36,38 @@ class DashboardPage extends GetView<AuthController> {
           FadeSlideIn(
             child: Obx(() {
               final u = controller.user.value;
-              return Row(children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  alignment: Alignment.center,
-                  decoration: const BoxDecoration(shape: BoxShape.circle, gradient: AppColors.primaryGradient),
-                  child: Text(_initials(u?.nama ?? ''),
-                      style: const TextStyle(color: AppColors.onPrimary, fontWeight: FontWeight.w800, fontSize: 18)),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(_greeting(), style: const TextStyle(fontSize: 13, color: AppColors.muted)),
-                    Text(u?.nama ?? '-',
-                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+              // SALES/SPV tidak punya tab Profil, jadi header ini jalan masuknya.
+              final canOpenProfile = Roles.isField(u?.role);
+              return InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: canOpenProfile ? () => Get.toNamed(AppRoutes.profile) : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(shape: BoxShape.circle, gradient: AppColors.primaryGradient),
+                      child: Text(_initials(u?.nama ?? ''),
+                          style: const TextStyle(color: AppColors.onPrimary, fontWeight: FontWeight.w800, fontSize: 18)),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(_greeting(), style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+                        Text(u?.nama ?? '-',
+                            maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                      ]),
+                    ),
+                    if (u != null) StatusChip(u.role),
+                    if (canOpenProfile) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
+                    ],
                   ]),
                 ),
-                if (u != null) StatusChip(u.role),
-              ]);
+              );
             }),
           ),
           const SizedBox(height: 20),
