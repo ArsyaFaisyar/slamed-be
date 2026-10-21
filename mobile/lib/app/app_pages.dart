@@ -12,6 +12,7 @@ import 'package:slamed_app/features/lkh/data/lkh_repository.dart';
 import 'package:slamed_app/features/lkh/presentation/controller/lkh_controller.dart';
 import 'package:slamed_app/features/lkh/presentation/controller/lkh_form_controller.dart';
 import 'package:slamed_app/features/lkh/presentation/pages/lkh_form_page.dart';
+import 'package:slamed_app/features/profile/presentation/pages/profile_page.dart';
 import 'package:slamed_app/features/project/data/project_repository.dart';
 import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
 import 'package:slamed_app/features/rkh/presentation/controllers/rkh_controller.dart';
@@ -47,6 +48,11 @@ abstract final class AppPages {
           fenix: true,
         );
       }),
+    ),
+    GetPage(
+      name: AppRoutes.profile,
+      page: () => const ProfilePage(),
+      middlewares: [AuthMiddleware()],
     ),
     GetPage(
       name: AppRoutes.rkhForm,
