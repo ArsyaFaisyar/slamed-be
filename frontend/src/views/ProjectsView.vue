@@ -5,16 +5,27 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
 
-import ProjectFormDialog, { type CustomerOption } from '../components/ProjectPage/ProjectFormDialog.vue'
+import ProjectFormDialog, {
+  type CustomerOption,
+  type SalesOption,
+} from '../components/ProjectPage/ProjectFormDialog.vue'
 
-import { deleteProject, getProjects, type Project } from '../api/projects.ts'
+import { deleteProject, getProjects, type Project } from '../api/projects'
 import { getCustomers, type Customer } from '../api/customers'
+import { getUsers, type User } from '../api/users'
+import type { UserRole } from '../constant/roles'
+import { getProjectStatuses, type ProjectStatus } from '../api/projectStatuses'
 import { getErrorMessage } from '../utils/error'
+import { parseDateString } from '../utils/date'
 
 const confirm = useConfirm()
 
+const SALES_ROLE: UserRole = 'SALES'
+
 const projects = ref<Project[]>([])
 const customers = ref<Customer[]>([])
+const users = ref<User[]>([])
+const statuses = ref<ProjectStatus[]>([])
 const search = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
@@ -24,6 +35,11 @@ const formVisible = ref(false)
 const selectedEdit = ref<Project | null>(null)
 
 const dateFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' })
+const rupiahFormat = new Intl.NumberFormat('id-ID', {
+  style: 'currency',
+  currency: 'IDR',
+  maximumFractionDigits: 0,
+})
 
 const customerOptions = computed<CustomerOption[]>(() =>
   customers.value.map((customer) => ({ value: customer.id, label: customer.nama_instansi })),
@@ -33,13 +49,57 @@ const customerNames = computed(
   () => new Map(customers.value.map((customer) => [customer.id, customer.nama_instansi])),
 )
 
+const salesOptions = computed<SalesOption[]>(() =>
+  users.value
+    .filter((user) => user.role === SALES_ROLE && user.is_active)
+    .map((user) => ({ value: user.id, label: user.nama })),
+)
+
+const userNames = computed(() => new Map(users.value.map((user) => [user.id, user.nama])))
+
+const statusMap = computed(() => new Map(statuses.value.map((status) => [status.id, status])))
+
 function customerName(project: Project) {
   return customerNames.value.get(project.customer_id) ?? `ID ${project.customer_id}`
+}
+
+function salesName(project: Project) {
+  return userNames.value.get(project.sales_id) ?? `ID ${project.sales_id}`
+}
+
+function statusName(project: Project) {
+  if (project.status_id === null || project.status_id === undefined) return ''
+  return statusMap.value.get(project.status_id)?.nama ?? ''
+}
+
+function statusColor(project: Project) {
+  if (project.status_id === null || project.status_id === undefined) return null
+  return statusMap.value.get(project.status_id)?.warna ?? null
+}
+
+function statusTextColor(project: Project) {
+  const hex = statusColor(project)
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return undefined
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#111827' : '#FFFFFF'
 }
 
 function formatDate(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '-' : dateFormat.format(date)
+}
+
+function formatClosing(value: string | null) {
+  const date = parseDateString(value)
+  return date ? dateFormat.format(date) : '-'
+}
+
+function formatRupiah(value: string | null) {
+  if (value === null || value === undefined || value === '') return '-'
+  const amount = Number(value)
+  return Number.isNaN(amount) ? '-' : rupiahFormat.format(amount)
 }
 
 const filteredProjects = computed(() => {
@@ -48,7 +108,7 @@ const filteredProjects = computed(() => {
   if (!keyword) return projects.value
 
   return projects.value.filter((project) =>
-    [project.nama_project, project.jenis, project.status, project.deskripsi, customerName(project)].some(
+    [project.nama_project, statusName(project), project.deskripsi, customerName(project), salesName(project)].some(
       (value) => String(value ?? '').toLowerCase().includes(keyword),
     ),
   )
@@ -85,6 +145,14 @@ async function fetchCustomers() {
   }
 }
 
+async function fetchStatuses() {
+  try {
+    statuses.value = await getProjectStatuses()
+  } catch {
+    statuses.value = []
+  }
+}
+
 function confirmDelete(project: Project) {
   confirm.require({
     header: 'Hapus Project',
@@ -111,9 +179,19 @@ function confirmDelete(project: Project) {
   })
 }
 
+async function fetchUsers() {
+  try {
+    users.value = await getUsers()
+  } catch {
+    users.value = []
+  }
+}
+
 onMounted(() => {
   fetchProjects()
   fetchCustomers()
+  fetchStatuses()
+  fetchUsers()
 })
 </script>
 
@@ -190,12 +268,14 @@ onMounted(() => {
         :class="loading && 'pointer-events-none opacity-60'"
         :aria-busy="loading"
       >
-        <table class="w-full min-w-[1000px] text-left text-sm">
+        <table class="w-full min-w-[1200px] text-left text-sm">
           <thead class="bg-sidebar text-fg-muted">
             <tr>
               <th class="px-5 py-3 font-medium">Project</th>
               <th class="px-5 py-3 font-medium">Customer</th>
-              <th class="px-5 py-3 font-medium">Jenis</th>
+              <th class="px-5 py-3 font-medium">Sales</th>
+              <th class="px-5 py-3 text-right font-medium">Nilai proyek</th>
+              <th class="px-5 py-3 font-medium">Estimasi closing</th>
               <th class="px-5 py-3 font-medium">Status</th>
               <th class="px-5 py-3 font-medium">Dibuat</th>
               <th class="px-5 py-3 text-center font-medium">Aksi</th>
@@ -217,10 +297,29 @@ onMounted(() => {
 
               <td class="px-5 py-4 text-fg-muted">{{ customerName(project) }}</td>
 
-              <td class="px-5 py-4 text-fg-muted">{{ project.jenis || '-' }}</td>
+              <td class="px-5 py-4 text-fg-muted">{{ salesName(project) }}</td>
+
+              <td class="whitespace-nowrap px-5 py-4 text-right tabular-nums">
+                {{ formatRupiah(project.nilai_proyek) }}
+              </td>
+
+              <td class="whitespace-nowrap px-5 py-4 text-fg-muted">
+                {{ formatClosing(project.estimasi_closing) }}
+              </td>
 
               <td class="px-5 py-4">
-                  {{ project.status }}
+                <span
+                  v-if="statusName(project)"
+                  class="inline-flex items-center rounded-md border border-line px-2.5 py-1 text-xs font-medium"
+                  :style="
+                    statusColor(project)
+                      ? { backgroundColor: statusColor(project) ?? undefined, color: statusTextColor(project), borderColor: statusColor(project) ?? undefined }
+                      : undefined
+                  "
+                >
+                  {{ statusName(project) }}
+                </span>
+                <span v-else class="text-fg-muted">-</span>
               </td>
 
               <td class="px-5 py-4 text-fg-muted">{{ formatDate(project.created_at) }}</td>
@@ -262,6 +361,7 @@ onMounted(() => {
       v-model:visible="formVisible"
       :project="selectedEdit"
       :customer-options="customerOptions"
+      :sales-options="salesOptions"
       @saved="fetchProjects"
     />
   </div>

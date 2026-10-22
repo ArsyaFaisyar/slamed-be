@@ -4,16 +4,23 @@ export interface Project {
   id: number;
   customer_id: number;
   nama_project: string;
-  jenis: string | null;
   deskripsi: string | null;
-  status: string | null;
+  status_id: number | null;
+  nilai_proyek: string | null;
+  estimasi_closing: string | null;
+  sales_id: number;
   created_at: string;
 }
 
-export type ProjectInput = {
+export interface ProjectInput {
   customer_id: number;
+  sales_id: number;
   nama_project: string;
-} & Partial<Record<"jenis" | "deskripsi" | "status", string | null>>;
+  deskripsi?: string | null;
+  status_id?: number | null;
+  nilai_proyek?: number | null;
+  estimasi_closing?: string | null;
+}
 
 export type ProjectUpdate = Partial<ProjectInput>;
 

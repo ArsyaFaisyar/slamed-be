@@ -1,13 +1,15 @@
 from pydantic import BaseModel, ConfigDict
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Literal
 
 
 class LKHCreate(BaseModel):
     rkh_id: int
     tanggal_kunjungan: date
     hasil_kunjungan: str
-    status_id: int
+    nama_pic: str
+    nomor_pic: str
+    status_lkh: Literal["NOT_YET", "DONE"] = "NOT_YET"
     tindak_lanjut: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -15,10 +17,12 @@ class LKHCreate(BaseModel):
 class LKHUpdate(BaseModel):
     tanggal_kunjungan: Optional[date] = None
     hasil_kunjungan: Optional[str] = None
-    status_id: Optional[int] = None
+    status_lkh: Optional[Literal["NOT_YET", "DONE"]] = None
     tindak_lanjut: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    nama_pic: Optional[str] = None
+    nomor_pic: Optional[str] = None
 
 class LKHResponse(BaseModel):
     id: int
@@ -26,7 +30,9 @@ class LKHResponse(BaseModel):
     sales_id: int
     tanggal_kunjungan: date
     hasil_kunjungan: str
-    status_id: Optional[int] = None
+    nama_pic: str
+    nomor_pic: str
+    status_lkh: Literal["NOT_YET", "DONE"]
     tindak_lanjut: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None

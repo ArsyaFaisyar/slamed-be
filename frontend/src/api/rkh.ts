@@ -10,7 +10,6 @@ export interface Rkh {
   judul_kegiatan: string;
   rencana_kegiatan: string;
   tipe_aktivitas: string;
-  // Dari backend berbentuk string (Decimal), kirim ke backend sebagai number.
   estimasi_biaya_harian: string;
   status: string;
   created_at: string;

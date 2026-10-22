@@ -60,6 +60,7 @@ export const menu: MenuItem[] = [
       { label: "Branch", to: "/master/branch" },
       { label: "Media Pengadaan", to: "/master/media-pengadaan" },
       { label: "Kategori Customer", to: "/master/kategori-customer" },
+      { label: "Status Project", to: "/master/status-project" },
       { label: "Area", to: "/master/area" },
       { label: "User", to: "/master/user" },
     ],

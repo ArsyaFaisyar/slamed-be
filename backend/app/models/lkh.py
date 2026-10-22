@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, Date, DateTime,
-    Text, Numeric, ForeignKey
+    Text, Numeric, ForeignKey, String
 )
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -19,14 +19,18 @@ class LKH(Base):
         nullable=False
     )
     tanggal_kunjungan = Column(Date, nullable=False)
-
+    tanggal_follow_up = Column(Date, nullable=True)
     hasil_kunjungan = Column(Text, nullable=False)
-    status_id = Column(
-        Integer,
-        ForeignKey("project_statuses.id"),
-        nullable=True,
+    status_lkh = Column(
+        String(20),
+        nullable=False,
+        default="NOT_YET",
+        server_default="NOT_YET",
     )
     tindak_lanjut = Column(Text, nullable=True)
+
+    nama_pic = Column(String(150), nullable=False)
+    nomor_pic = Column(String(30), nullable=False)
 
     latitude = Column(Numeric(10, 7), nullable=True)
     longitude = Column(Numeric(10, 7), nullable=True)
