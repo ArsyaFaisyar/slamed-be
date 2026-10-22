@@ -22,8 +22,7 @@ const props = defineProps<{
 }>();
 
 const maxDate = computed(() => {
-  const baseDate = form.tanggal_rencana ? new Date(form.tanggal_rencana) : new Date()
-  const max = new Date(baseDate)
+  const max = new Date()
   max.setDate(max.getDate() + 7)
   return max
 })

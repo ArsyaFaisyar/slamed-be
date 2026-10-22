@@ -1,13 +1,30 @@
 import { http } from "./http";
 
+export const LKH_DONE = "DONE";
+export const LKH_REOPEN = "NOT_YET";
+
+export type AttachmentJenis = "FOTO" | "LAMPIRAN";
+
+export interface LkhAttachment {
+  id: number;
+  lkh_id: number;
+  nama_file: string;
+  tipe_file: string;
+  jenis: AttachmentJenis;
+  url: string;
+}
+
 export interface Lkh {
   id: number;
   rkh_id: number;
   sales_id: number;
   tanggal_kunjungan: string;
   hasil_kunjungan: string | null;
-  status_id: number | null;
+  nama_pic: string | null;
+  nomor_pic: string | null;
+  status_lkh: string | null;
   tindak_lanjut: string | null;
+  tanggal_follow_up?: string | null;
   latitude: number | null;
   longitude: number | null;
   created_at: string;
@@ -18,12 +35,32 @@ export interface CreateLkhPayload {
   rkh_id: number;
   tanggal_kunjungan: string;
   hasil_kunjungan: string;
-  tindak_lanjut: string;
-  latitude: number;
-  longitude: number;
+  nama_pic: string;
+  nomor_pic: string;
+  tindak_lanjut?: string | null;
+  tanggal_follow_up?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
-export type UpdateLkhPayload = Partial<Omit<CreateLkhPayload, "rkh_id">>;
+export type UpdateLkhPayload = Partial<Omit<CreateLkhPayload, "rkh_id">> & {
+  status_lkh?: string;
+};
+
+export function isLkhDone(lkh: Lkh | null | undefined): boolean {
+  return lkh?.status_lkh?.toUpperCase() === LKH_DONE;
+}
+
+function toFormData(payload: object): FormData {
+  const body = new FormData();
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null) continue;
+    body.append(key, value instanceof File ? value : String(value));
+  }
+
+  return body;
+}
 
 export async function getLkh(): Promise<Lkh[]> {
   const { data } = await http.get<Lkh[]>("/lkh/");
@@ -36,7 +73,7 @@ export async function getLkhById(lkhId: number): Promise<Lkh> {
 }
 
 export async function createLkh(payload: CreateLkhPayload): Promise<Lkh> {
-  const { data } = await http.post<Lkh>("/lkh/", payload);
+  const { data } = await http.post<Lkh>("/lkh/", toFormData(payload));
   return data;
 }
 
@@ -45,37 +82,25 @@ export async function updateLkh(lkhId: number, payload: UpdateLkhPayload): Promi
   return data;
 }
 
+export async function reopenLkh(lkhId: number): Promise<Lkh> {
+  return updateLkh(lkhId, { status_lkh: LKH_REOPEN });
+}
+
 export async function deleteLkh(lkhId: number): Promise<void> {
   await http.delete(`/lkh/${lkhId}`);
 }
 
-export interface LkhAttachment {
-  id: number;
-  [key: string]: unknown;
-}
-
-const attachmentNameKeys = ["file_name", "filename", "original_filename", "original_name", "nama_file", "nama", "name"];
-
-export function attachmentName(attachment: LkhAttachment): string {
-  for (const key of attachmentNameKeys) {
-    const value = attachment[key];
-    if (typeof value === "string" && value) return value;
-  }
-  return `Lampiran ${attachment.id}`;
-}
-
-export async function getLkhAttachments(lkhId: number): Promise<LkhAttachment[]> {
+export async function getAttachments(lkhId: number): Promise<LkhAttachment[]> {
   const { data } = await http.get<LkhAttachment[]>(`/lkh/${lkhId}/attachments`);
   return data;
 }
 
-export async function uploadLkhAttachment(lkhId: number, file: File): Promise<void> {
-  const body = new FormData();
-  body.append("file", file);
-  await http.post(`/lkh/${lkhId}/attachments`, body);
+export async function uploadAttachment(lkhId: number, file: File, jenis: AttachmentJenis): Promise<LkhAttachment> {
+  const { data } = await http.post<LkhAttachment>(`/lkh/${lkhId}/attachments`, toFormData({ file, jenis }));
+  return data;
 }
 
-export async function getLkhAttachmentBlob(attachmentId: number): Promise<Blob> {
+export async function fetchAttachmentBlob(attachmentId: number): Promise<Blob> {
   const { data } = await http.get<Blob>(`/lkh/attachments/${attachmentId}/file`, {
     responseType: "blob",
   });
