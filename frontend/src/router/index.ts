@@ -48,6 +48,11 @@ const router = createRouter({
           component: () => import("../views/BranchDetailView.vue"),
           meta: { title: "Detail Cabang" },
         },
+        {
+          path: "/aktivitas/lkh/:rkhId",
+          component: () => import("../views/LkhFormView.vue"),
+          meta: { title: "Form LKH" },
+        },
       ],
     },
     {

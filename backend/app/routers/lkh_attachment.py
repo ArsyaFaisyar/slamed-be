@@ -1,4 +1,3 @@
-
 from pathlib import Path
 from uuid import uuid4
 
@@ -6,9 +5,9 @@ from fastapi import (
     APIRouter,
     Depends,
     File,
+    Form,
     HTTPException,
     UploadFile,
-    Form
 )
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -21,16 +20,29 @@ from app.core.dependencies import get_current_user
 
 router = APIRouter(prefix="/lkh", tags=["LKH Attachments"])
 
-# Lokasi file relatif terhadap direktori backend.
 UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "lkh"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_TYPES = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "application/pdf": ".pdf",
+RULES = {
+    "FOTO": (
+        {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "image/gif": ".gif",
+        },
+        2 * 1024 * 1024,
+    ),
+    "LAMPIRAN": (
+        {
+            "application/pdf": ".pdf",
+            "application/msword": ".doc",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+            "application/vnd.ms-excel": ".xls",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+        },
+        5 * 1024 * 1024,
+    ),
 }
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 def get_accessible_lkh(
@@ -61,55 +73,35 @@ def get_accessible_lkh(
     )
 
 
+def serialize(item: LKHAttachment) -> dict:
+    return {
+        "id": item.id,
+        "lkh_id": item.lkh_id,
+        "nama_file": item.nama_file,
+        "tipe_file": item.tipe_file,
+        "jenis": item.jenis,
+        "url": f"/lkh/attachments/{item.id}/file",
+    }
+
+
 @router.post("/{lkh_id}/attachments", status_code=201)
 def upload_attachment(
     lkh_id: int,
     file: UploadFile = File(...),
+    jenis: str = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    jenis: str = Form(...)
 ):
-    get_accessible_lkh(lkh_id, db, current_user)
-    if jenis not in ("FOTO", "LAMPIRAN"):
+    laporan = get_accessible_lkh(lkh_id, db, current_user)
+
+    if jenis not in RULES:
         raise HTTPException(400, "Jenis file harus FOTO atau LAMPIRAN")
 
-    if jenis == "FOTO":
-        allowed_types = {
-            "image/jpeg": ".jpg",
-            "image/png": ".png",
-            "image/gif": ".gif",
-        }
-        max_size = 2 * 1024 * 1024
-    else:
-        allowed_types = {
-            "application/pdf": ".pdf",
-            "application/msword": ".doc",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-            "application/vnd.ms-excel": ".xls",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
-        }
-        max_size = 5 * 1024 * 1024
-
+    allowed_types, max_size = RULES[jenis]
     extension = allowed_types.get(file.content_type)
 
     if not extension:
         raise HTTPException(400, "Format file tidak sesuai jenisnya")
-
-    if jenis == "FOTO":
-        existing_foto = db.query(LKHAttachment).filter(
-            LKHAttachment.lkh_id == lkh_id,
-            LKHAttachment.jenis == "FOTO",
-        ).first()
-
-    if existing_foto:
-        raise HTTPException(409, "Foto kunjungan sudah diunggah")
-    extension = ALLOWED_TYPES.get(file.content_type)
-
-    if not extension:
-        raise HTTPException(
-            400,
-            "Format file harus JPG, PNG, atau PDF",
-        )
 
     content = file.file.read(max_size + 1)
     if not content:
@@ -117,15 +109,21 @@ def upload_attachment(
     if len(content) > max_size:
         raise HTTPException(413, "Ukuran file melebihi batas")
 
-    if jenis == "FOTO":
-        laporan = get_accessible_lkh(lkh_id, db, current_user)
-        laporan.status_lkh = "DONE"
+    # Satu file per jenis: unggahan baru menggantikan yang lama.
+    old_items = db.query(LKHAttachment).filter(
+        LKHAttachment.lkh_id == lkh_id,
+        LKHAttachment.jenis == jenis,
+    ).all()
+    old_files = [item.file_url for item in old_items]
 
     filename = f"{uuid4().hex}{extension}"
     destination = UPLOAD_DIR / filename
 
     try:
         destination.write_bytes(content)
+
+        for item in old_items:
+            db.delete(item)
 
         attachment = LKHAttachment(
             lkh_id=lkh_id,
@@ -134,9 +132,11 @@ def upload_attachment(
             tipe_file=file.content_type,
             jenis=jenis,
         )
-        
-
         db.add(attachment)
+
+        if jenis == "FOTO":
+            laporan.status_lkh = "DONE"
+
         db.commit()
         db.refresh(attachment)
 
@@ -145,14 +145,10 @@ def upload_attachment(
         destination.unlink(missing_ok=True)
         raise HTTPException(500, "Gagal menyimpan lampiran")
 
-    return {
-        "id": attachment.id,
-        "lkh_id": attachment.lkh_id,
-        "nama_file": attachment.nama_file,
-        "tipe_file": attachment.tipe_file,
-        "jenis": attachment.jenis,
-        "url": f"/lkh/attachments/{attachment.id}/file",
-    }
+    for name in old_files:
+        (UPLOAD_DIR / name).unlink(missing_ok=True)
+
+    return serialize(attachment)
 
 
 @router.get("/attachments/{attachment_id}/file")
@@ -190,17 +186,11 @@ def list_attachments(
 ):
     get_accessible_lkh(lkh_id, db, current_user)
 
-    attachments = db.query(LKHAttachment).filter(
-        LKHAttachment.lkh_id == lkh_id
-    ).all()
+    attachments = (
+        db.query(LKHAttachment)
+        .filter(LKHAttachment.lkh_id == lkh_id)
+        .order_by(LKHAttachment.id)
+        .all()
+    )
 
-    return [
-        {
-            "id": item.id,
-            "nama_file": item.nama_file,
-            "tipe_file": item.tipe_file,
-            "url": f"/lkh/attachments/{item.id}/file",
-            "jenis": item.jenis
-        }
-        for item in attachments
-    ]
+    return [serialize(item) for item in attachments]

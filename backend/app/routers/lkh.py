@@ -77,8 +77,6 @@ def create_lkh(
     tanggal_follow_up: date | None = Form(None),
     latitude: float | None = Form(None),
     longitude: float | None = Form(None),
-    foto: UploadFile = File(...),
-    file_lampiran: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(
         require_roles("SUPERADMIN", "SPV", "SALES")
@@ -97,7 +95,6 @@ def create_lkh(
         raise HTTPException(409, "RKH ini sudah memiliki laporan kunjungan")
 
     try:
-
         laporan = LKH(
             rkh_id=rkh.id,
             sales_id=rkh.sales_id,
@@ -122,11 +119,6 @@ def create_lkh(
         db.rollback()
         raise
 
-    finally:
-        foto.file.close()
-        if file_lampiran:
-            file_lampiran.file.close()
-
 @router.patch("/{lkh_id}", response_model=LKHResponse)
 def update_lkh(
     lkh_id: int,
@@ -150,6 +142,11 @@ def update_lkh(
 
     for field, value in updates.items():
         setattr(laporan, field, value)
+
+    if "status_lkh" in updates:
+        rkh = db.query(RKH).filter(RKH.id == laporan.rkh_id).first()
+        if rkh:
+            rkh.status = "CLOSED" if laporan.status_lkh == "DONE" else "OPEN"
 
     try:
         db.commit()

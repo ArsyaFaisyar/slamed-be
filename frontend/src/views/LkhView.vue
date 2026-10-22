@@ -1,110 +1,126 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
-import Button from 'primevue/button'
-import Message from 'primevue/message'
-import ConfirmDialog from 'primevue/confirmdialog'
-import { useConfirm } from 'primevue/useconfirm'
+import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
+import InputText from "primevue/inputtext";
+import Select from "primevue/select";
+import Button from "primevue/button";
+import Message from "primevue/message";
+import ConfirmDialog from "primevue/confirmdialog";
+import { useConfirm } from "primevue/useconfirm";
 
-import LkhFormDialog from '../components/LkhPage/LkhFormDialog.vue'
+import {
+  deleteLkh,
+  getLkh,
+  isLkhDone,
+  reopenLkh,
+  type Lkh,
+} from "../api/lkh.ts";
+import { getRkh, type Rkh } from "../api/rkh";
+import { getCustomers, type Customer } from "../api/customers";
+import { getProjects, type Project } from "../api/projects";
+import { getUsers, type User } from "../api/users";
+import { useAuthStore } from "../stores/auth";
+import { getErrorMessage } from "../utils/error";
+import { formatDate } from "../utils/date";
 
-import { deleteLkh, getLkh, type Lkh } from '../api/lkh.ts'
-import { getRkh, type Rkh } from '../api/rkh'
-import { getCustomers, type Customer } from '../api/customers'
-import { getProjects, type Project } from '../api/projects'
-import { getUsers, type User } from '../api/users'
-import { useAuthStore } from '../stores/auth'
-import { getErrorMessage } from '../utils/error'
-import { formatDate } from '../utils/date'
+const stateLabel: Record<string, string> = {
+  OPEN: "Open",
+  DONE: "Done",
+};
 
-type LkhState = 'none' | 'partial' | 'done'
+const stateClass: Record<string, string> = {
+  OPEN: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  DONE: "bg-green-500/10 text-green-700 dark:text-green-400",
+};
 
-const stateOptions: { label: string; value: LkhState }[] = [
-  { label: 'Belum diisi', value: 'none' },
-  { label: 'Belum lengkap', value: 'partial' },
-  { label: 'Done', value: 'done' },
-]
+const stateOptions = Object.entries(stateLabel).map(([value, label]) => ({
+  label,
+  value,
+}));
 
-const stateLabel: Record<LkhState, string> = {
-  none: 'Belum diisi',
-  partial: 'Belum lengkap',
-  done: 'Done',
+function labelOf(state: string) {
+  return stateLabel[state] ?? stateLabel.OPEN;
 }
 
-const stateClass: Record<LkhState, string> = {
-  none: 'bg-sidebar text-fg-muted',
-  partial: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
-  done: 'bg-green-500/10 text-green-700 dark:text-green-400',
+function classOf(state: string) {
+  return stateClass[state] ?? stateClass.OPEN;
 }
 
-const confirm = useConfirm()
-const auth = useAuthStore()
+const confirm = useConfirm();
+const auth = useAuthStore();
+const router = useRouter();
 
-const isSales = computed(() => auth.user?.role === 'SALES')
+const isSales = computed(() => auth.user?.role === "SALES");
 
-const rkhList = ref<Rkh[]>([])
-const lkhList = ref<Lkh[]>([])
-const customers = ref<Customer[]>([])
-const projects = ref<Project[]>([])
-const users = ref<User[]>([])
+const rkhList = ref<Rkh[]>([]);
+const lkhList = ref<Lkh[]>([]);
+const customers = ref<Customer[]>([]);
+const projects = ref<Project[]>([]);
+const users = ref<User[]>([]);
 
-const search = ref('')
-const stateFilter = ref<LkhState | null>(null)
-const loading = ref(false)
-const errorMessage = ref('')
-const actionError = ref('')
-
-const formVisible = ref(false)
-const selectedRkh = ref<Rkh | null>(null)
-const selectedLkh = ref<Lkh | null>(null)
+const search = ref("");
+const stateFilter = ref<string | null>(null);
+const loading = ref(false);
+const errorMessage = ref("");
+const actionError = ref("");
 
 const customerNames = computed(
-  () => new Map(customers.value.map((customer) => [customer.id, customer.nama_instansi])),
-)
+  () =>
+    new Map(
+      customers.value.map((customer) => [
+        customer.id,
+        customer.nama_instansi,
+      ]),
+    ),
+);
+
 const projectNames = computed(
-  () => new Map(projects.value.map((project) => [project.id, project.nama_project])),
-)
-const userNames = computed(() => new Map(users.value.map((user) => [user.id, user.nama])))
-const lkhByRkh = computed(() => new Map(lkhList.value.map((lkh) => [lkh.rkh_id, lkh])))
+  () =>
+    new Map(
+      projects.value.map((project) => [
+        project.id,
+        project.nama_project,
+      ]),
+    ),
+);
+
+const userNames = computed(
+  () => new Map(users.value.map((user) => [user.id, user.nama])),
+);
+
+const lkhByRkh = computed(
+  () => new Map(lkhList.value.map((lkh) => [lkh.rkh_id, lkh])),
+);
 
 function customerName(rkh: Rkh) {
-  return customerNames.value.get(rkh.customer_id) ?? `ID ${rkh.customer_id}`
+  return customerNames.value.get(rkh.customer_id) ?? `ID ${rkh.customer_id}`;
 }
 
 function projectName(rkh: Rkh) {
-  return projectNames.value.get(rkh.project_id) ?? `ID ${rkh.project_id}`
+  return projectNames.value.get(rkh.project_id) ?? `ID ${rkh.project_id}`;
 }
 
 function salesName(rkh: Rkh) {
-  return userNames.value.get(rkh.sales_id) ?? `ID ${rkh.sales_id}`
+  return userNames.value.get(rkh.sales_id) ?? `ID ${rkh.sales_id}`;
 }
 
 function lkhOf(rkh: Rkh) {
-  return lkhByRkh.value.get(rkh.id) ?? null
+  return lkhByRkh.value.get(rkh.id) ?? null;
 }
 
-function isComplete(lkh: Lkh) {
-  return (
-    !!lkh.hasil_kunjungan?.trim() &&
-    !!lkh.tindak_lanjut?.trim() &&
-    lkh.latitude !== null &&
-    lkh.longitude !== null
-  )
-}
-
-function stateOf(rkh: Rkh): LkhState {
-  const lkh = lkhOf(rkh)
-  if (!lkh) return 'none'
-  return isComplete(lkh) ? 'done' : 'partial'
+function stateOf(rkh: Rkh): string {
+  return isLkhDone(lkhOf(rkh)) ? "DONE" : "OPEN";
 }
 
 const filteredRkh = computed(() => {
-  const keyword = search.value.trim().toLowerCase()
+  const keyword = search.value.trim().toLowerCase();
 
   return rkhList.value.filter((rkh) => {
-    if (stateFilter.value && stateOf(rkh) !== stateFilter.value) return false
-    if (!keyword) return true
+    if (stateFilter.value && stateOf(rkh) !== stateFilter.value) {
+      return false;
+    }
+
+    if (!keyword) return true;
 
     return [
       rkh.judul_kegiatan,
@@ -113,55 +129,81 @@ const filteredRkh = computed(() => {
       projectName(rkh),
       salesName(rkh),
       lkhOf(rkh)?.hasil_kunjungan,
-    ].some((value) => String(value ?? '').toLowerCase().includes(keyword))
-  })
-})
-
-const contextTitle = computed(() => selectedRkh.value?.judul_kegiatan ?? '')
-const contextDetail = computed(() => {
-  const rkh = selectedRkh.value
-  if (!rkh) return ''
-  return [customerName(rkh), projectName(rkh), formatDate(rkh.tanggal_rencana)].join(' · ')
-})
+    ].some((value) =>
+      String(value ?? "").toLowerCase().includes(keyword),
+    );
+  });
+});
 
 function openForm(rkh: Rkh) {
-  selectedRkh.value = rkh
-  selectedLkh.value = lkhOf(rkh)
-  formVisible.value = true
+  router.push(`/aktivitas/lkh/${rkh.id}`);
 }
 
 function confirmDelete(rkh: Rkh) {
-  const lkh = lkhOf(rkh)
-  if (!lkh) return
+  const lkh = lkhOf(rkh);
+  if (!lkh) return;
 
   confirm.require({
-    header: 'Hapus LKH',
-    message: `Yakin ingin menghapus LKH untuk kegiatan "${rkh.judul_kegiatan}"? RKH akan kembali berstatus belum diisi.`,
-    icon: 'pi pi-exclamation-triangle',
+    header: "Hapus LKH",
+    message: `Yakin ingin menghapus LKH untuk kegiatan "${rkh.judul_kegiatan}"? RKH akan kembali berstatus Open.`,
+    icon: "pi pi-exclamation-triangle",
     rejectProps: {
-      label: 'Batal',
-      severity: 'secondary',
-      variant: 'text',
+      label: "Batal",
+      severity: "secondary",
+      variant: "text",
     },
     acceptProps: {
-      label: 'Hapus',
-      severity: 'danger',
+      label: "Hapus",
+      severity: "danger",
     },
     accept: async () => {
-      actionError.value = ''
+      actionError.value = "";
+
       try {
-        await deleteLkh(lkh.id)
-        await fetchData()
+        await deleteLkh(lkh.id);
+        await fetchData();
       } catch (error) {
-        actionError.value = getErrorMessage(error, 'Gagal menghapus LKH')
+        actionError.value = getErrorMessage(error, "Gagal menghapus LKH");
       }
     },
-  })
+  });
+}
+
+function confirmReopen(rkh: Rkh) {
+  const lkh = lkhOf(rkh);
+  if (!lkh) return;
+
+  confirm.require({
+    header: "Kembalikan status LKH",
+    message: `Kembalikan LKH untuk kegiatan "${rkh.judul_kegiatan}" ke status Open? LKH akan bisa diedit lagi.`,
+    icon: "pi pi-replay",
+    rejectProps: {
+      label: "Batal",
+      severity: "secondary",
+      variant: "text",
+    },
+    acceptProps: {
+      label: "Kembalikan",
+    },
+    accept: async () => {
+      actionError.value = "";
+
+      try {
+        await reopenLkh(lkh.id);
+        await fetchData();
+      } catch (error) {
+        actionError.value = getErrorMessage(
+          error,
+          "Gagal mengembalikan status LKH",
+        );
+      }
+    },
+  });
 }
 
 async function fetchData() {
-  loading.value = true
-  errorMessage.value = ''
+  loading.value = true;
+  errorMessage.value = "";
 
   try {
     const [rkhData, lkhData, customerData, projectData] = await Promise.all([
@@ -169,28 +211,32 @@ async function fetchData() {
       getLkh(),
       getCustomers(),
       getProjects(),
-    ])
+    ]);
 
     rkhList.value = isSales.value
       ? rkhData.filter((rkh) => rkh.sales_id === auth.user?.id)
-      : rkhData
-    lkhList.value = lkhData
-    customers.value = customerData
-    projects.value = projectData
+      : rkhData;
+
+    lkhList.value = lkhData;
+    customers.value = customerData;
+    projects.value = projectData;
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, 'Gagal memuat daftar LKH')
+    errorMessage.value = getErrorMessage(
+      error,
+      "Gagal memuat daftar LKH",
+    );
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 
   try {
-    users.value = await getUsers()
+    users.value = await getUsers();
   } catch {
-    users.value = []
+    users.value = [];
   }
 }
 
-onMounted(fetchData)
+onMounted(fetchData);
 </script>
 
 <template>
@@ -209,7 +255,13 @@ onMounted(fetchData)
       </div>
     </Message>
 
-    <Message v-if="actionError" severity="error" @close="actionError = ''">{{ actionError }}</Message>
+    <Message
+      v-if="actionError"
+      severity="error"
+      @close="actionError = ''"
+    >
+      {{ actionError }}
+    </Message>
 
     <section class="rounded-xl border border-line bg-card">
       <div
@@ -260,14 +312,18 @@ onMounted(fetchData)
         <i class="pi pi-clipboard text-3xl text-fg-muted" />
 
         <p class="font-medium">
-          {{ search || stateFilter ? 'Kegiatan tidak ditemukan' : 'Belum ada RKH' }}
+          {{
+            search || stateFilter
+              ? "Kegiatan tidak ditemukan"
+              : "Belum ada RKH"
+          }}
         </p>
 
         <p class="text-sm text-fg-muted">
           {{
             search || stateFilter
-              ? 'Coba kata kunci atau filter lain.'
-              : 'Buat RKH terlebih dahulu, lalu isi LKH-nya di sini.'
+              ? "Coba kata kunci atau filter lain."
+              : "Buat RKH terlebih dahulu, lalu isi LKH-nya di sini."
           }}
         </p>
       </div>
@@ -315,18 +371,24 @@ onMounted(fetchData)
 
               <td class="px-5 py-4">{{ customerName(rkh) }}</td>
 
-              <td class="px-5 py-4 text-fg-muted">{{ projectName(rkh) }}</td>
+              <td class="px-5 py-4 text-fg-muted">
+                {{ projectName(rkh) }}
+              </td>
 
               <td class="whitespace-nowrap px-5 py-4 text-fg-muted">
-                {{ lkhOf(rkh) ? formatDate(lkhOf(rkh)?.tanggal_kunjungan) : '-' }}
+                {{
+                  lkhOf(rkh)
+                    ? formatDate(lkhOf(rkh)?.tanggal_kunjungan)
+                    : "-"
+                }}
               </td>
 
               <td class="px-5 py-4">
                 <span
                   class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium"
-                  :class="stateClass[stateOf(rkh)]"
+                  :class="classOf(stateOf(rkh))"
                 >
-                  {{ stateLabel[stateOf(rkh)] }}
+                  {{ labelOf(stateOf(rkh)) }}
                 </span>
               </td>
 
@@ -339,6 +401,28 @@ onMounted(fetchData)
                     size="small"
                     @click="openForm(rkh)"
                   />
+
+                  <template v-else-if="isLkhDone(lkhOf(rkh))">
+                    <Button
+                      icon="pi pi-eye"
+                      variant="text"
+                      rounded
+                      severity="secondary"
+                      aria-label="Lihat LKH"
+                      v-tooltip.top="'Lihat LKH'"
+                      @click="openForm(rkh)"
+                    />
+
+                    <Button
+                      icon="pi pi-replay"
+                      variant="text"
+                      rounded
+                      severity="warn"
+                      aria-label="Kembalikan status"
+                      v-tooltip.top="'Kembalikan ke status open'"
+                      @click="confirmReopen(rkh)"
+                    />
+                  </template>
 
                   <template v-else>
                     <Button
@@ -372,16 +456,5 @@ onMounted(fetchData)
         Total {{ rkhList.length }} kegiatan
       </footer>
     </section>
-
-    <LkhFormDialog
-      v-model:visible="formVisible"
-      :rkh-id="selectedRkh?.id ?? null"
-      :lkh="selectedLkh"
-      :context-title="contextTitle"
-      :context-detail="contextDetail"
-      @saved="fetchData"
-    />
-
-    <ConfirmDialog />
   </div>
 </template>
