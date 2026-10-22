@@ -36,3 +36,4 @@ build/
 .flutter-automation/
 
 uploads/
+backend/uploads/
