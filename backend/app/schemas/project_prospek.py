@@ -28,9 +28,21 @@ class ProjectProspekResponse(BaseModel):
     nama_project: str
     deskripsi: Optional[str] = None
     status_id: Optional[int] = None
+    status_rel: Optional["ProjectStatusResponse"] = None
     nilai_proyek: Decimal | None = None
     estimasi_closing: date | None = None
     sales_id: int
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class ProjectStatusResponse(BaseModel):
+    id: int
+    nama: str
+    warna: Optional[str] = None
+    urutan: int
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+ProjectProspekResponse.model_rebuild()

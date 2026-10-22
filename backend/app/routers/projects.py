@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.db.database import get_db
 from app.models.customer import Customer
@@ -16,7 +16,9 @@ from app.core.dependencies import get_current_user, require_roles
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 def get_project_query(db: Session, current_user: User):
-    query = db.query(ProjectProspek)
+    query = db.query(ProjectProspek).options(
+        joinedload(ProjectProspek.status_rel)
+    )
 
     if current_user.role == "SALES":
         query = query.join(
