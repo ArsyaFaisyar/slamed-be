@@ -11,18 +11,22 @@ class LKHCreate(BaseModel):
     nomor_pic: str
     status_lkh: Literal["NOT_YET", "DONE"] = "NOT_YET"
     tindak_lanjut: Optional[str] = None
+    tanggal_follow_up: Optional[date] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+
 
 class LKHUpdate(BaseModel):
     tanggal_kunjungan: Optional[date] = None
     hasil_kunjungan: Optional[str] = None
     status_lkh: Optional[Literal["NOT_YET", "DONE"]] = None
     tindak_lanjut: Optional[str] = None
+    tanggal_follow_up: Optional[date] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     nama_pic: Optional[str] = None
     nomor_pic: Optional[str] = None
+
 
 class LKHResponse(BaseModel):
     id: int
@@ -34,6 +38,7 @@ class LKHResponse(BaseModel):
     nomor_pic: str
     status_lkh: Literal["NOT_YET", "DONE"]
     tindak_lanjut: Optional[str] = None
+    tanggal_follow_up: Optional[date] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     created_at: Optional[datetime] = None
