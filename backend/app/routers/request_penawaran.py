@@ -1,0 +1,185 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.db.database import get_db
+from app.core.dependencies import get_current_user
+from app.models.user import User
+from app.models.lkh import LKH
+from app.models.rkh import RKH
+from app.models.project_prospek import ProjectProspek
+from app.models.project_status import ProjectStatus
+from app.models.branch import Branch
+from app.models.request_penawaran import RequestPenawaran
+from app.models.request_penawaran_item import RequestPenawaranItem
+from app.schemas.request_penawaran import (
+    RequestPenawaranCreate,
+    RequestPenawaranResponse,
+    RequestPenawaranItemCreate,
+    RequestPenawaranItemUpdate,
+    RequestPenawaranItemResponse,
+)
+from app.models.media_pengadaan import MediaPengadaan
+
+router = APIRouter(
+    prefix="/request-penawaran",
+    tags=["Request Penawaran"],
+)
+
+
+def get_request_access(db, request_id, user):
+    request = db.query(RequestPenawaran).filter(
+        RequestPenawaran.id == request_id
+    ).first()
+    if not request:
+        raise HTTPException(404, "Request penawaran tidak ditemukan")
+    lkh = db.query(LKH).filter(LKH.id == request.lkh_id).first()
+    if user.role == "SALES" and lkh.sales_id != user.id:
+        raise HTTPException(403, "Tidak memiliki akses")
+    if user.role not in ("SALES", "SPV", "SUPERADMIN"):
+        raise HTTPException(403, "Tidak memiliki akses")
+    return request
+
+
+@router.post("/", response_model=RequestPenawaranResponse, status_code=201)
+def create_request(
+    data: RequestPenawaranCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role not in ("SALES", "SPV", "SUPERADMIN"):
+        raise HTTPException(403, "Tidak memiliki akses")
+
+    lkh = db.query(LKH).filter(LKH.id == data.lkh_id).first()
+    if not lkh:
+        raise HTTPException(404, "LKH tidak ditemukan")
+
+    if user.role == "SALES" and lkh.sales_id != user.id:
+        raise HTTPException(403, "LKH bukan tanggung jawabmu")
+
+    existing = db.query(RequestPenawaran).filter(
+        RequestPenawaran.lkh_id == data.lkh_id
+    ).first()
+
+    if existing:
+        raise HTTPException(409, "LKH ini sudah memiliki request penawaran")
+
+    rkh = db.query(RKH).filter(RKH.id == lkh.rkh_id).first()
+    project = db.query(ProjectProspek).filter(
+        ProjectProspek.id == rkh.project_id
+    ).first()
+
+    status = db.query(ProjectStatus).filter(
+        ProjectStatus.id == project.status_id
+    ).first()
+
+    if not status or status.nama.strip().casefold() != "request penawaran":
+        raise HTTPException(
+            400,
+            "Status project harus Request Penawaran",
+        )
+
+    if data.branch_id is not None:
+        branch = db.query(Branch).filter(
+            Branch.id == data.branch_id
+        ).first()
+        if not branch:
+            raise HTTPException(404, "Branch/PT tidak ditemukan")
+
+    request = RequestPenawaran(**data.model_dump())
+
+    try:
+        db.add(request)
+        db.commit()
+        db.refresh(request)
+        return request
+    except Exception:
+        db.rollback()
+        raise
+
+@router.get("/{request_id}", response_model=RequestPenawaranResponse)
+def get_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return get_request_access(db, request_id, user)
+
+@router.get(
+    "/{request_id}/items",
+    response_model=list[RequestPenawaranItemResponse],
+)
+def get_items(
+    request_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    get_request_access(db, request_id, user)
+    return db.query(RequestPenawaranItem).filter(
+        RequestPenawaranItem.request_penawaran_id == request_id
+    ).order_by(RequestPenawaranItem.id.asc()).all()
+
+
+@router.post(
+    "/{request_id}/items",
+    response_model=RequestPenawaranItemResponse,
+    status_code=201,
+)
+def create_item(
+    request_id: int,
+    data: RequestPenawaranItemCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    get_request_access(db, request_id, user)
+
+    item = RequestPenawaranItem(
+        request_penawaran_id=request_id,
+        **data.model_dump(),
+    )
+
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+@router.patch(
+    "/{request_id}/items/{item_id}",
+    response_model=RequestPenawaranItemResponse,
+)
+def update_item(
+    request_id: int,
+    item_id: int,
+    data: RequestPenawaranItemUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    get_request_access(db, request_id, user)
+
+    item = db.query(RequestPenawaranItem).filter(
+        RequestPenawaranItem.id == item_id,
+        RequestPenawaranItem.request_penawaran_id == request_id,
+    ).first()
+
+    if not item:
+        raise HTTPException(404, "Item tidak ditemukan")
+
+    updates = data.model_dump(exclude_unset=True)
+
+    if user.role == "SALES":
+        restricted = {"harga_modal", "harga_jual"}
+        if restricted.intersection(updates):
+            raise HTTPException(
+                403,
+                "Sales tidak dapat mengubah harga modal atau harga jual",
+            )
+
+    for field, value in updates.items():
+        setattr(item, field, value)
+
+    try:
+        db.commit()
+        db.refresh(item)
+        return item
+    except Exception:
+        db.rollback()
+        raise
