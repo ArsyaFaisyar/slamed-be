@@ -14,7 +14,6 @@ import { deleteProject, getProjects, type Project } from '../api/projects'
 import { getCustomers, type Customer } from '../api/customers'
 import { getUsers, type User } from '../api/users'
 import type { UserRole } from '../constant/roles'
-import { getProjectStatuses, type ProjectStatus } from '../api/projectStatuses'
 import { getErrorMessage } from '../utils/error'
 import { parseDateString } from '../utils/date'
 
@@ -25,7 +24,6 @@ const SALES_ROLE: UserRole = 'SALES'
 const projects = ref<Project[]>([])
 const customers = ref<Customer[]>([])
 const users = ref<User[]>([])
-const statuses = ref<ProjectStatus[]>([])
 const search = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
@@ -57,8 +55,6 @@ const salesOptions = computed<SalesOption[]>(() =>
 
 const userNames = computed(() => new Map(users.value.map((user) => [user.id, user.nama])))
 
-const statusMap = computed(() => new Map(statuses.value.map((status) => [status.id, status])))
-
 function customerName(project: Project) {
   return customerNames.value.get(project.customer_id) ?? `ID ${project.customer_id}`
 }
@@ -68,13 +64,11 @@ function salesName(project: Project) {
 }
 
 function statusName(project: Project) {
-  if (project.status_id === null || project.status_id === undefined) return ''
-  return statusMap.value.get(project.status_id)?.nama ?? ''
+  return project.status_rel?.nama ?? ''
 }
 
 function statusColor(project: Project) {
-  if (project.status_id === null || project.status_id === undefined) return null
-  return statusMap.value.get(project.status_id)?.warna ?? null
+  return project.status_rel?.warna ?? null
 }
 
 function statusTextColor(project: Project) {
@@ -145,14 +139,6 @@ async function fetchCustomers() {
   }
 }
 
-async function fetchStatuses() {
-  try {
-    statuses.value = await getProjectStatuses()
-  } catch {
-    statuses.value = []
-  }
-}
-
 function confirmDelete(project: Project) {
   confirm.require({
     header: 'Hapus Project',
@@ -190,7 +176,6 @@ async function fetchUsers() {
 onMounted(() => {
   fetchProjects()
   fetchCustomers()
-  fetchStatuses()
   fetchUsers()
 })
 </script>
