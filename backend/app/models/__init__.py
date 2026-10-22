@@ -11,3 +11,5 @@ from app.models.customer import Customer
 from app.models.customer_category import CustomerCategory
 from app.models.project_status import ProjectStatus
 from app.models.project_status_history import ProjectStatusHistory
+from app.models.request_penawaran import RequestPenawaran
+from app.models.request_penawaran_item import RequestPenawaranItem
