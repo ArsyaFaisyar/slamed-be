@@ -44,6 +44,12 @@ const rolePermissions: Record<string, AppRole[]> = {
   "/setting/rbca": ["SUPERADMIN"],
 };
 
+const dynamicRoutes: { pattern: RegExp; base: string }[] = [{ pattern: /^\/aktivitas\/lkh\/\d+$/, base: "/aktivitas/lkh" }];
+
+function resolvePermissionPath(path: string): string {
+  return dynamicRoutes.find(({ pattern }) => pattern.test(path))?.base ?? path;
+}
+
 export function canAccessRoute(path: string, role?: string | null): boolean {
   if (!role) return false;
 
@@ -57,7 +63,7 @@ export function canAccessRoute(path: string, role?: string | null): boolean {
 
   if (path === "/profile") return true;
 
-  const allowedRoles = rolePermissions[path];
+  const allowedRoles = rolePermissions[resolvePermissionPath(path)];
 
   return allowedRoles?.includes(role as AppRole) ?? false;
 }

@@ -1,4 +1,5 @@
 import { http } from "./http";
+import type { ProjectStatus } from "./projectStatuses";
 
 export interface Project {
   id: number;
@@ -6,6 +7,7 @@ export interface Project {
   nama_project: string;
   deskripsi: string | null;
   status_id: number | null;
+  status_rel?: ProjectStatus | null;
   nilai_proyek: string | null;
   estimasi_closing: string | null;
   sales_id: number;

@@ -1,14 +1,12 @@
-
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import InputText from "primevue/inputtext";
 import Select from "primevue/select";
 import Button from "primevue/button";
 import Message from "primevue/message";
 import ConfirmDialog from "primevue/confirmdialog";
 import { useConfirm } from "primevue/useconfirm";
-
-import LkhFormDialog from "../components/LkhPage/LkhFormDialog.vue";
 
 import {
   deleteLkh,
@@ -50,6 +48,7 @@ function classOf(state: string) {
 
 const confirm = useConfirm();
 const auth = useAuthStore();
+const router = useRouter();
 
 const isSales = computed(() => auth.user?.role === "SALES");
 
@@ -64,10 +63,6 @@ const stateFilter = ref<string | null>(null);
 const loading = ref(false);
 const errorMessage = ref("");
 const actionError = ref("");
-
-const formVisible = ref(false);
-const selectedRkh = ref<Rkh | null>(null);
-const selectedLkh = ref<Lkh | null>(null);
 
 const customerNames = computed(
   () =>
@@ -140,25 +135,8 @@ const filteredRkh = computed(() => {
   });
 });
 
-const contextTitle = computed(
-  () => selectedRkh.value?.judul_kegiatan ?? "",
-);
-
-const contextDetail = computed(() => {
-  const rkh = selectedRkh.value;
-  if (!rkh) return "";
-
-  return [
-    customerName(rkh),
-    projectName(rkh),
-    formatDate(rkh.tanggal_rencana),
-  ].join(" · ");
-});
-
 function openForm(rkh: Rkh) {
-  selectedRkh.value = rkh;
-  selectedLkh.value = lkhOf(rkh);
-  formVisible.value = true;
+  router.push(`/aktivitas/lkh/${rkh.id}`);
 }
 
 function confirmDelete(rkh: Rkh) {
@@ -478,14 +456,5 @@ onMounted(fetchData);
         Total {{ rkhList.length }} kegiatan
       </footer>
     </section>
-
-    <LkhFormDialog
-      v-model:visible="formVisible"
-      :rkh-id="selectedRkh?.id ?? null"
-      :lkh="selectedLkh"
-      :context-title="contextTitle"
-      :context-detail="contextDetail"
-      @saved="fetchData"
-    />
   </div>
 </template>
