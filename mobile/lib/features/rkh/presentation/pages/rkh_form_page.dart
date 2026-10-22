@@ -13,6 +13,14 @@ import 'package:slamed_app/shared/widgets/section_title.dart';
 class RkhFormPage extends GetView<RkhFormController> {
   const RkhFormPage({super.key});
 
+  /// Penjelasan di bawah dropdown project saat belum bisa dipilih.
+  String? _projectHint(RkhFormController c) {
+    if (c.customerId.value == null) return 'Pilih customer terlebih dahulu';
+    if (c.loadingProjects.value) return 'Memuat project...';
+    if (c.projects.isEmpty) return 'Customer ini belum punya project. Tambahkan project di web terlebih dahulu.';
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = controller;
@@ -49,12 +57,17 @@ class RkhFormPage extends GetView<RkhFormController> {
             gap,
             Obx(() => DropdownButtonFormField<int>(
                   // key: dropdown dibangun ulang saat customer berganti agar pilihan project ter-reset.
-                  key: ValueKey('project-${c.customerId.value}'),
+                  key: ValueKey('project-${c.customerId.value}-${c.projects.length}'),
                   initialValue: c.projectId.value,
                   isExpanded: true,
                   dropdownColor: AppColors.surfaceHigh,
                   borderRadius: BorderRadius.circular(14),
-                  decoration: const InputDecoration(labelText: 'Project / prospek', prefixIcon: Icon(Icons.folder_open_outlined)),
+                  decoration: InputDecoration(
+                    labelText: 'Project / prospek',
+                    prefixIcon: const Icon(Icons.folder_open_outlined),
+                    helperText: _projectHint(c),
+                    helperMaxLines: 2,
+                  ),
                   items: [
                     for (final p in c.projects)
                       DropdownMenuItem(value: p.id, child: Text(p.namaProject, overflow: TextOverflow.ellipsis)),

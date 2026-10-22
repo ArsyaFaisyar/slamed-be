@@ -276,24 +276,26 @@ class LkhFormController extends GetxController {
     busy.value = true;
     error.value = null;
     try {
-      if (_lkhId == null) {
-        final lkh = await _repo.create(LkhCreate(
+          if (_lkhId == null) {
+      final lkh = await _repo.create(
+        LkhCreate(
           rkhId: rkh.id,
           tanggalKunjungan: tanggal.value,
           hasilKunjungan: hasil.text.trim(),
           namaPic: namaPic.text.trim(),
           nomorPic: nomorPic.text.trim(),
-          tindakLanjut: tindak.text.trim().isEmpty ? null : tindak.text.trim(),
-          // Lokasi LKH = lokasi saat foto diambil.
+          tindakLanjut: tindak.text.trim().isEmpty
+              ? null
+              : tindak.text.trim(),
           latitude: fotoPos.value!.latitude,
           longitude: fotoPos.value!.longitude,
-        ));
-        _lkhId = lkh.id;
-      }
-      if (!_fotoUploaded) {
-        await _upload(foto.value!.path, AppConstants.jenisFoto);
-        _fotoUploaded = true;
-      }
+        ),
+        fotoPath: foto.value!.path,
+      );
+
+      _lkhId = lkh.id;
+      _fotoUploaded = true;
+    }
       final l = lampiran.value;
       if (l != null && !_lampiranUploaded) {
         await _upload(l.path!, AppConstants.jenisLampiran);

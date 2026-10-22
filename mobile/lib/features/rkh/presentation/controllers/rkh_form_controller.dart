@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:slamed_app/core/network/api_exception.dart';
 import 'package:slamed_app/core/constants/app_constant.dart';
+import 'package:slamed_app/core/network/api_exception.dart';
 import 'package:slamed_app/features/customer/data/customer_repository.dart';
 import 'package:slamed_app/features/customer/data/models/customer.dart';
 import 'package:slamed_app/features/project/data/models/project.dart';
@@ -25,6 +25,7 @@ class RkhFormController extends GetxController {
   final projects = <Project>[].obs;
   final customerId = RxnInt();
   final projectId = RxnInt();
+  final loadingProjects = false.obs;
   final pelaksanaan = DateTime.now().obs;
   final busy = false.obs;
   final error = RxnString();
@@ -56,11 +57,19 @@ class RkhFormController extends GetxController {
     customerId.value = id;
     projectId.value = null;
     projects.clear();
-    if (id == null) return;
+    if (id == null) {
+      loadingProjects.value = false;
+      return;
+    }
+    loadingProjects.value = true;
     try {
-      projects.assignAll(await _projectRepo.list(customerId: id));
+      final list = await _projectRepo.list(customerId: id);
+      if (customerId.value != id) return; // customer sudah berganti saat menunggu
+      projects.assignAll(list);
     } catch (e) {
-      showSnack(errorMessage(e));
+      if (customerId.value == id) showSnack(errorMessage(e));
+    } finally {
+      if (customerId.value == id) loadingProjects.value = false;
     }
   }
 
