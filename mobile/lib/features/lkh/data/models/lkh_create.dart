@@ -5,7 +5,9 @@ class LkhCreate {
     required this.rkhId,
     required this.tanggalKunjungan,
     required this.hasilKunjungan,
-    this.statusProspek,
+    required this.namaPic,
+    required this.nomorPic,
+    this.statusLkh = 'NOT_YET',
     this.tindakLanjut,
     this.latitude,
     this.longitude,
@@ -13,15 +15,17 @@ class LkhCreate {
 
   final int rkhId;
   final DateTime tanggalKunjungan;
-  final String hasilKunjungan;
-  final String? statusProspek, tindakLanjut;
+  final String hasilKunjungan, namaPic, nomorPic, statusLkh;
+  final String? tindakLanjut;
   final double? latitude, longitude;
 
   Map<String, dynamic> toJson() => {
         'rkh_id': rkhId,
         'tanggal_kunjungan': toApiDate(tanggalKunjungan),
         'hasil_kunjungan': hasilKunjungan,
-        if (statusProspek != null) 'status_prospek': statusProspek,
+        'nama_pic': namaPic,
+        'nomor_pic': nomorPic,
+        'status_lkh': statusLkh,
         if (tindakLanjut != null) 'tindak_lanjut': tindakLanjut,
         if (latitude != null) 'latitude': latitude,
         if (longitude != null) 'longitude': longitude,

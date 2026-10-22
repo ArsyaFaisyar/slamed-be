@@ -18,9 +18,10 @@ class LkhRepository {
   Future<Lkh> create(LkhCreate body) async =>
       Lkh.fromJson(Map<String, dynamic>.from(await _api.request('POST', '/lkh/', body: body.toJson())));
 
-  /// Field multipart: `file`. Respons upload/list belum punya schema di OpenAPI.
-  Future<dynamic> uploadAttachment(int lkhId, String filePath) =>
-      _api.upload('/lkh/$lkhId/attachments', filePath);
+  /// Field multipart `file` + field form `jenis` (`FOTO` atau `LAMPIRAN`).
+  /// Mengunggah FOTO membuat backend menandai LKH sebagai DONE.
+  Future<dynamic> uploadAttachment(int lkhId, String filePath, {required String jenis}) =>
+      _api.upload('/lkh/$lkhId/attachments', filePath, fields: {'jenis': jenis});
 
   Future<dynamic> attachments(int lkhId) => _api.request('GET', '/lkh/$lkhId/attachments');
 }
