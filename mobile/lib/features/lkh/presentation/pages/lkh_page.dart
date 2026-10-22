@@ -79,14 +79,18 @@ class LkhPage extends GetView<LkhController> {
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: AppCard(
-                      accent: prospectAccent(l.statusProspek),
+                      accent: l.isDone ? AppColors.successFg : AppColors.warningFg,
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Row(children: [
                           Expanded(child: Text(formatDate(l.tanggalKunjungan), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
-                          if (l.statusProspek != null) StatusChip.forProspect(l.statusProspek!),
+                          l.isDone ? const StatusChip.success('DONE') : const StatusChip.warning('BELUM'),
                         ]),
                         const SizedBox(height: 8),
                         Text(l.hasilKunjungan, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                        if (l.namaPic.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          MetaRow(Icons.person_outline, l.nomorPic.isEmpty ? l.namaPic : '${l.namaPic} · ${l.nomorPic}'),
+                        ],
                         if (l.latitude != null && l.longitude != null) ...[
                           const SizedBox(height: 8),
                           MetaRow(Icons.location_on_outlined, '${l.latitude!.toStringAsFixed(4)}, ${l.longitude!.toStringAsFixed(4)}'),
