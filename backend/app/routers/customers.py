@@ -11,6 +11,7 @@ from app.schemas.customer import (
     CustomerResponse,
 )
 from app.core.dependencies import get_current_user, require_roles
+from app.core.roles import CUSTOMER_VIEW_ROLES
 
 router = APIRouter(
     prefix="/customers",
@@ -40,7 +41,7 @@ def get_customers(
 
     if current_user.role == "SALES":
         query = query.filter(Customer.sales_id == current_user.id)
-    elif current_user.role not in ("SUPERADMIN", "SPV"):
+    elif current_user.role not in CUSTOMER_VIEW_ROLES:
         raise HTTPException(
             status_code=403,
             detail="Kamu tidak memiliki akses ke data customer",
@@ -71,7 +72,7 @@ def get_customer(
                 status_code=403,
                 detail="Customer ini bukan tanggung jawabmu",
             )
-    elif current_user.role not in ("SUPERADMIN", "SPV"):
+    elif current_user.role not in CUSTOMER_VIEW_ROLES:
         raise HTTPException(
             status_code=403,
             detail="Kamu tidak memiliki akses ke data customer",

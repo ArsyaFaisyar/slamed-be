@@ -4,10 +4,10 @@ import { getMe, login as loginRequest, type AuthUser, type LoginPayload } from "
 import { clearToken, getToken, setToken } from "../utils/token";
 import { useProfileStore } from "./profile";
 
-function getUserIdFromToken(token: string): number | null {
+function isTokenUsable(token: string): boolean {
   try {
     const payload = token.split(".")[1];
-    if (!payload) return null;
+    if (!payload) return false;
 
     const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
 
@@ -17,14 +17,14 @@ function getUserIdFromToken(token: string): number | null {
     };
 
     if (decoded.exp && decoded.exp * 1000 <= Date.now()) {
-      return null;
+      return false;
     }
 
     const id = Number(decoded.sub);
 
-    return Number.isInteger(id) && id > 0 ? id : null;
+    return Number.isInteger(id) && id > 0;
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -52,14 +52,12 @@ export const useAuthStore = defineStore("auth", () => {
       throw new Error("Token tidak tersedia");
     }
 
-    const userId = getUserIdFromToken(token.value);
-
-    if (!userId) {
+    if (!isTokenUsable(token.value)) {
       logout();
-      throw new Error("Token tidak valid atau ID user tidak tersedia");
+      throw new Error("Token tidak valid atau sudah kedaluwarsa");
     }
 
-    user.value = await getMe(userId);
+    user.value = await getMe();
   }
 
   function logout() {

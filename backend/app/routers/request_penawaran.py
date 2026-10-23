@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.roles import REQUEST_EDIT_ROLES, REQUEST_VIEW_ROLES
 from app.models.user import User
 from app.models.lkh import LKH
 from app.models.rkh import RKH
@@ -30,7 +31,7 @@ router = APIRouter(
 REQUEST_STATUS_KEYS = ("request penawaran", "req penawaran", "penawaran")
 
 
-def get_request_access(db, request_id, user):
+def get_request_access(db, request_id, user, write=False):
     request = db.query(RequestPenawaran).filter(
         RequestPenawaran.id == request_id
     ).first()
@@ -46,7 +47,9 @@ def get_request_access(db, request_id, user):
     if user.role == "SALES" and lkh.sales_id != user.id:
         raise HTTPException(403, "Tidak memiliki akses")
 
-    if user.role not in ("SALES", "SPV", "SUPERADMIN"):
+    allowed = REQUEST_EDIT_ROLES if write else REQUEST_VIEW_ROLES
+
+    if user.role not in allowed:
         raise HTTPException(403, "Tidak memiliki akses")
 
     return request
@@ -147,7 +150,7 @@ def get_requests(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if user.role not in ("SALES", "SPV", "SUPERADMIN"):
+    if user.role not in REQUEST_VIEW_ROLES:
         raise HTTPException(403, "Tidak memiliki akses")
 
     query = db.query(RequestPenawaran)
@@ -185,7 +188,7 @@ def update_request(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    request = get_request_access(db, request_id, user)
+    request = get_request_access(db, request_id, user, write=True)
     updates = data.model_dump(exclude_unset=True)
 
     if user.role == "SALES":
@@ -268,7 +271,7 @@ def create_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    get_request_access(db, request_id, user)
+    get_request_access(db, request_id, user, write=True)
 
     item = RequestPenawaranItem(
         request_penawaran_id=request_id,
@@ -296,7 +299,7 @@ def update_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    get_request_access(db, request_id, user)
+    get_request_access(db, request_id, user, write=True)
 
     item = db.query(RequestPenawaranItem).filter(
         RequestPenawaranItem.id == item_id,
@@ -336,8 +339,7 @@ def delete_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # Pastikan request ada dan user punya akses
-    get_request_access(db, request_id, user)
+    get_request_access(db, request_id, user, write=True)
 
     item = (
         db.query(RequestPenawaranItem)

@@ -11,6 +11,7 @@ from app.models.user import User
 from app.models.project_prospek import ProjectProspek
 from app.schemas.lkh import LKHCreate, LKHUpdate, LKHResponse
 from app.core.dependencies import get_current_user, require_roles
+from app.core.roles import LKH_VIEW_ROLES
 from datetime import date
 
 router = APIRouter(prefix="/lkh", tags=["LKH"])
@@ -20,7 +21,7 @@ def get_lkh_query(db: Session, current_user: User):
 
     if current_user.role == "SALES":
         query = query.filter(LKH.sales_id == current_user.id)
-    elif current_user.role not in ("SUPERADMIN", "SPV"):
+    elif current_user.role not in LKH_VIEW_ROLES:
         raise HTTPException(
             status_code=403,
             detail="Kamu tidak memiliki akses ke laporan kunjungan",
@@ -125,7 +126,7 @@ def update_lkh(
     data: LKHUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(
-        require_roles("SUPERADMIN", "SPV", "SALES")
+        require_roles("SUPERADMIN", "SPV", "SALES", "PPIC")
     ),
 ):
     laporan = get_lkh_query(db, current_user).filter(

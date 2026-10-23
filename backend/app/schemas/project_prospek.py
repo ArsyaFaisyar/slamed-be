@@ -1,48 +1,63 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional
-from datetime import datetime,date
+
+from datetime import date, datetime
 from decimal import Decimal
+
+from pydantic import BaseModel, ConfigDict
 
 
 class ProjectProspekCreate(BaseModel):
     customer_id: int
     nama_project: str
-    deskripsi: Optional[str] = None
-    status_id: Optional[int] = None
+    sales_id: int
+    deskripsi: str | None = None
+    status_id: int | None = None
     nilai_proyek: Decimal | None = None
     estimasi_closing: date | None = None
-    sales_id: int
+
 
 class ProjectProspekUpdate(BaseModel):
-    customer_id: Optional[int] = None
-    nama_project: Optional[str] = None
-    deskripsi: Optional[str] = None
-    status_id: Optional[int] = None
+    customer_id: int | None = None
+    nama_project: str | None = None
+    deskripsi: str | None = None
+    status_id: int | None = None
     nilai_proyek: Decimal | None = None
     estimasi_closing: date | None = None
     sales_id: int | None = None
+
+
+class ProjectStatusResponse(BaseModel):
+    id: int
+    nama: str
+    warna: str | None = None
+    urutan: int
+    is_active: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProjectSalesResponse(BaseModel):
+    id: int
+    nama: str
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 class ProjectProspekResponse(BaseModel):
     id: int
     customer_id: int
     nama_project: str
-    deskripsi: Optional[str] = None
-    status_id: Optional[int] = None
-    status_rel: Optional["ProjectStatusResponse"] = None
+    deskripsi: str | None = None
+    status_id: int | None = None
+    status_rel: ProjectStatusResponse | None = None
+
+    sales_id: int
+    sales_rel: ProjectSalesResponse | None = None
+
     nilai_proyek: Decimal | None = None
     estimasi_closing: date | None = None
-    sales_id: int
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
-class ProjectStatusResponse(BaseModel):
-    id: int
-    nama: str
-    warna: Optional[str] = None
-    urutan: int
-    is_active: bool
-
-    model_config = ConfigDict(from_attributes=True)
 
 ProjectProspekResponse.model_rebuild()

@@ -13,8 +13,11 @@ import { deleteCustomer, getCustomers, type Customer } from '../api/customers'
 import { getUsers, type User } from '../api/users'
 import { getAreas, type Area } from '../api/areas'
 import { getErrorMessage } from '../utils/error'
+import { useAuthStore } from '../stores/auth'
+import type { UserRole } from '../constant/roles'
 
 const confirm = useConfirm()
+const auth = useAuthStore()
 
 const customers = ref<Customer[]>([])
 const users = ref<User[]>([])
@@ -27,6 +30,12 @@ const actionError = ref('')
 const formVisible = ref(false)
 const selectedEdit = ref<Customer | null>(null)
 
+const canManage = computed(() =>
+  (['SUPERADMIN', 'SPV'] as UserRole[]).includes(
+    auth.user?.role as UserRole,
+  ),
+)
+
 const salesOptions = computed<SalesOption[]>(() =>
   users.value
     .filter((user) => user.role === 'SALES')
@@ -37,24 +46,13 @@ const salesOptions = computed<SalesOption[]>(() =>
     })),
 )
 
-const salesNames = computed(
-  () => new Map(users.value.map((user) => [user.id, user.nama])),
-)
-
-const areaNames = computed(
-  () => new Map(areas.value.map((area) => [area.id, area.nama])),
-)
 
 function salesName(customer: Customer) {
-  if (customer.sales_id == null) return '-'
-
-  return salesNames.value.get(customer.sales_id) ?? `ID ${customer.sales_id}`
+  return customer.sales_nama ?? '-'
 }
 
-function areaName(areaId: number | null | undefined) {
-  if (areaId == null) return '-'
-
-  return areaNames.value.get(areaId) ?? `Area ID ${areaId}`
+function areaName(customer: Customer) {
+  return customer.area_nama ?? '-'
 }
 
 const filteredCustomers = computed(() => {
@@ -70,7 +68,7 @@ const filteredCustomers = computed(() => {
       customer.kota,
       customer.kategori,
       customer.area_id,
-      areaName(customer.area_id),
+      areaName(customer),
       salesName(customer),
     ].some((value) =>
       String(value ?? '').toLowerCase().includes(keyword),
@@ -97,16 +95,18 @@ async function fetchCustomers() {
 async function fetchUsers() {
   try {
     users.value = await getUsers()
-  } catch {
+  } catch (error) {
     users.value = []
+    console.error('Gagal memuat data user:', getErrorMessage(error, 'Error memuat user'))
   }
 }
 
 async function fetchAreas() {
   try {
     areas.value = await getAreas()
-  } catch {
+  } catch (error) {
     areas.value = []
+    console.error('Gagal memuat data area:', getErrorMessage(error, 'Error memuat area'))
   }
 }
 
@@ -199,6 +199,7 @@ onMounted(() => {
           />
 
           <Button
+            v-if="canManage"
             label="Tambah customer"
             icon="pi pi-plus"
             size="small"
@@ -241,9 +242,14 @@ onMounted(() => {
               <th class="px-5 py-3 font-medium">Instansi</th>
               <th class="px-5 py-3 font-medium">PIC</th>
               <th class="px-5 py-3 font-medium">Kategori</th>
-              <th class="px-5 py-3 font-medium">Area ID</th>
+              <th class="px-5 py-3 font-medium">Area</th>
               <th class="px-5 py-3 font-medium">Sales</th>
-              <th class="px-5 py-3 text-center font-medium">Aksi</th>
+              <th
+                v-if="canManage"
+                class="px-5 py-3 text-center font-medium"
+              >
+                Aksi
+              </th>
             </tr>
           </thead>
 
@@ -269,11 +275,11 @@ onMounted(() => {
 
               <td class="px-5 py-4">{{ customer.kategori || '-' }}</td>
               <td class="px-5 py-4 text-fg-muted">
-                {{ areaName(customer.area_id) }}
+                {{ areaName(customer) }}
               </td>
               <td class="px-5 py-4 text-fg-muted">{{ salesName(customer) }}</td>
 
-              <td class="px-5 py-4 text-center">
+              <td v-if="canManage" class="px-5 py-4 text-center">
                 <div class="flex items-center justify-center gap-1">
                   <Button
                     icon="pi pi-pencil"
