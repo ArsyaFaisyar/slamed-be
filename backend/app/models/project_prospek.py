@@ -31,7 +31,12 @@ class ProjectProspek(Base):
         Numeric(15, 2),
         nullable=True
     )
-
+    pipeline_status = Column(
+        String(30),
+        nullable=False,
+        default="Prospek",
+        server_default="Prospek",
+    )
     estimasi_closing = Column(
         Date,
         nullable=True

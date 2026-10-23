@@ -13,3 +13,4 @@ from app.models.project_status import ProjectStatus
 from app.models.project_status_history import ProjectStatusHistory
 from app.models.request_penawaran import RequestPenawaran
 from app.models.request_penawaran_item import RequestPenawaranItem
+from app.models.project_log import ProjectLog

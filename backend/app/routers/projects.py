@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.models.customer import Customer
 from app.models.project_prospek import ProjectProspek
 from app.models.project_status import ProjectStatus
+from app.models.project_status_history import ProjectStatusHistory
 from app.models.user import User
 from app.schemas.project_prospek import (
     ProjectProspekCreate,
@@ -12,6 +13,7 @@ from app.schemas.project_prospek import (
     ProjectProspekResponse,
 )
 from app.core.dependencies import get_current_user, require_roles
+from app.utils.project_log import catat_project_log
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -121,6 +123,14 @@ def create_project(
     )
 
     db.add(project)
+    db.flush()
+    catat_project_log(
+        db=db,
+        project_id=project.id,
+        user_id=current_user.id,
+        aktivitas="Project dibuat",
+        deskripsi=f"Project {project.nama_project} dibuat.",
+    )
     db.commit()
     db.refresh(project)
 
@@ -147,7 +157,7 @@ def update_project(
         )
 
     updates = data.model_dump(exclude_unset=True)
-
+    old_status_id = project.status_id
     if "customer_id" in updates:
         customer = db.query(Customer).filter(
             Customer.id == updates["customer_id"]
@@ -161,6 +171,51 @@ def update_project(
 
     for field, value in updates.items():
         setattr(project, field, value)
+
+    if (
+        "status_id" in updates
+        and project.status_id != old_status_id
+    ):
+        old_status = (
+            db.query(ProjectStatus)
+            .filter(ProjectStatus.id == old_status_id)
+            .first()
+        )
+
+        new_status = (
+            db.query(ProjectStatus)
+            .filter(ProjectStatus.id == project.status_id)
+            .first()
+        )
+
+        if not new_status:
+            raise HTTPException(
+                status_code=400,
+                detail="Status project tidak ditemukan",
+            )
+        db.add(
+            ProjectStatusHistory(
+                project_id=project.id,
+                old_status_id=old_status_id,
+                new_status_id=project.status_id,
+                changed_by=current_user.id,
+                catatan="Status project diperbarui",
+            )
+        )
+
+        catat_project_log(
+            db=db,
+            project_id=project.id,
+            user_id=current_user.id,
+            aktivitas="Status project berubah",
+            deskripsi=(
+                f"Status berubah dari "
+                f"{old_status.nama if old_status else 'Belum ada status'} "
+                f"menjadi {new_status.nama}."
+            ),
+        )
+    
+    
 
     db.commit()
     db.refresh(project)
