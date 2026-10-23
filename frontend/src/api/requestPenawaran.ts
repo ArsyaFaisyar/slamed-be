@@ -11,12 +11,13 @@ export interface RequestPenawaran {
   branch_id: number;
   mode_pagu: string;
   pajak_harga_modal: string;
-  durasi: number;
   status_request: string;
   total_pagu: Numeric | null;
   total_harga_modal: Numeric | null;
   total_harga_jual: Numeric | null;
   created_at: string;
+  completed_at: string | null;
+  sla_label: string | null;
 }
 
 export interface RequestPenawaranInput {
@@ -26,7 +27,6 @@ export interface RequestPenawaranInput {
   branch_id: number;
   mode_pagu: string;
   pajak_harga_modal: string;
-  durasi: number;
 }
 
 export interface RequestItem {
@@ -51,7 +51,6 @@ export interface RequestPenawaranUpdate {
   branch_id?: number;
   mode_pagu?: string;
   pajak_harga_modal?: string;
-  durasi?: number;
   total_pagu?: number | null;
 }
 
@@ -174,5 +173,3 @@ export function forgetRequestId(lkhId: number) {
     return;
   }
 }
-
-
