@@ -23,4 +23,3 @@ def hitung_sla(created_at: datetime, completed_at: datetime | None) -> str:
     jumlah_hari = (sekarang.date() - mulai.date()).days
     if jumlah_hari == 0:
         return "Berjalan hari ini"      
-    return f"Berjalan {jumlah_hari} hari"
