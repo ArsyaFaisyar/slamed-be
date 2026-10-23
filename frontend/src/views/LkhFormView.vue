@@ -23,6 +23,7 @@ import { getRkhById, type Rkh } from "../api/rkh";
 import { getCustomers, type Customer } from "../api/customers";
 import { getProjects, updateProject, type Project } from "../api/projects";
 import { getProjectStatuses, type ProjectStatus } from "../api/projectStatuses";
+import { getRequestPenawaran, recallRequestId } from "../api/requestPenawaran";
 import { useAuthStore } from "../stores/auth";
 import { getErrorMessage, getFieldErrors } from "../utils/error";
 import { formatDate, parseDateString, toDateString } from "../utils/date";
@@ -33,6 +34,7 @@ import LkhFotoField from "../components/LkhPage/LkhFotoField.vue";
 import LkhLampiranField from "../components/LkhPage/LkhLampiranField.vue";
 
 const LIST_PATH = "/aktivitas/lkh";
+const CANVAS_STATUS_NAME = "canvas";
 
 type Field =
   | "tanggal_kunjungan"
@@ -70,6 +72,7 @@ const customers = ref<Customer[]>([]);
 const projects = ref<Project[]>([]);
 const projectStatuses = ref<ProjectStatus[]>([]);
 const attachments = ref<LkhAttachment[]>([]);
+const hasRequestPenawaran = ref(false);
 
 const loading = ref(false);
 const loadError = ref("");
@@ -129,6 +132,10 @@ interface ProjectStatusOption {
   color: string | null;
 }
 
+function isCanvas(label: string | null | undefined) {
+  return (label ?? "").trim().toLowerCase() === CANVAS_STATUS_NAME;
+}
+
 const projectStatusOptions = computed<ProjectStatusOption[]>(() => {
   const options = projectStatuses.value
     .filter((status) => status.is_active)
@@ -144,25 +151,38 @@ const projectStatusOptions = computed<ProjectStatusOption[]>(() => {
     });
   }
 
+  // Setelah request penawaran dibuat, status tidak boleh kembali ke Canvas.
+  if (hasRequestPenawaran.value) {
+    return options.filter((option) => !isCanvas(option.label) || option.value === current);
+  }
+
   return options;
 });
 
-const clientErrors = computed<Record<Field, string>>(() => ({
-  tanggal_kunjungan: form.tanggal_kunjungan ? "" : "Tanggal kunjungan wajib diisi",
-  hasil_kunjungan: form.hasil_kunjungan.trim() ? "" : "Hasil kunjungan wajib diisi",
-  nama_pic: form.nama_pic.trim() ? "" : "Nama PIC wajib diisi",
-  nomor_pic: !form.nomor_pic.trim()
-    ? "Nomor PIC wajib diisi"
-    : /^\d+$/.test(form.nomor_pic.trim())
-      ? ""
-      : "Nomor PIC hanya boleh berisi angka",
-  foto: foto.value || existingFoto.value ? "" : "Foto wajib diunggah",
-  file_lampiran: "",
-  tindak_lanjut: "",
-  tanggal_follow_up: "",
-  project_status: "",
-  location: "",
-}));
+const clientErrors = computed<Record<Field, string>>(() => {
+  const selected = projectStatusOptions.value.find((option) => option.value === projectStatusId.value);
+  const backToCanvas =
+    hasRequestPenawaran.value &&
+    isCanvas(selected?.label) &&
+    projectStatusId.value !== (project.value?.status_id ?? null);
+
+  return {
+    tanggal_kunjungan: form.tanggal_kunjungan ? "" : "Tanggal kunjungan wajib diisi",
+    hasil_kunjungan: form.hasil_kunjungan.trim() ? "" : "Hasil kunjungan wajib diisi",
+    nama_pic: form.nama_pic.trim() ? "" : "Nama PIC wajib diisi",
+    nomor_pic: !form.nomor_pic.trim()
+      ? "Nomor PIC wajib diisi"
+      : /^\d+$/.test(form.nomor_pic.trim())
+        ? ""
+        : "Nomor PIC hanya boleh berisi angka",
+    foto: foto.value || existingFoto.value ? "" : "Foto wajib diunggah",
+    file_lampiran: "",
+    tindak_lanjut: "",
+    tanggal_follow_up: "",
+    project_status: backToCanvas ? "Status tidak bisa dikembalikan ke Canvas karena request penawaran sudah dibuat" : "",
+    location: "",
+  };
+});
 
 function fieldError(field: Field) {
   return serverErrors.value[field] || (submitted.value ? clientErrors.value[field] : "");
@@ -225,6 +245,21 @@ async function loadAttachments() {
   }
 }
 
+async function checkRequestPenawaran() {
+  hasRequestPenawaran.value = false;
+  if (!lkh.value) return;
+
+  const storedId = recallRequestId(lkh.value.id);
+  if (storedId === null) return;
+
+  try {
+    await getRequestPenawaran(storedId);
+    hasRequestPenawaran.value = true;
+  } catch {
+    hasRequestPenawaran.value = false;
+  }
+}
+
 async function load() {
   const id = rkhId.value;
 
@@ -233,6 +268,7 @@ async function load() {
   rkh.value = null;
   lkh.value = null;
   attachments.value = [];
+  hasRequestPenawaran.value = false;
 
   if (!Number.isInteger(id) || id <= 0) {
     loadError.value = "RKH tidak valid";
@@ -260,7 +296,7 @@ async function load() {
     projects.value = projectData;
     projectStatuses.value = statusData;
     resetForm();
-    await loadAttachments();
+    await Promise.all([loadAttachments(), checkRequestPenawaran()]);
   } catch (error) {
     loadError.value = getErrorMessage(error, "Gagal memuat data LKH");
   } finally {
@@ -583,6 +619,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             show-clear
             fluid
             :disabled="saving || readonly"
+            :invalid="!!fieldError('project_status')"
             empty-message="Daftar status tidak tersedia"
           >
             <template #option="{ option }">
@@ -607,6 +644,9 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
               <span v-else class="text-fg-muted">{{ placeholder }}</span>
             </template>
           </Select>
+          <p v-if="hasRequestPenawaran && !readonly" class="mt-1 text-xs text-fg-muted">
+            Request penawaran sudah dibuat, jadi status tidak bisa dikembalikan ke Canvas.
+          </p>
         </LkhFormField>
 
         <LkhLocationField
