@@ -11,6 +11,8 @@ class RequestPenawaranCreate(BaseModel):
     branch_id: Optional[int] = None
     mode_pagu: str = "DETAIL"
     pajak_harga_modal: Optional[str] = None
+    nama_pic: Optional[str] = None
+    nomor_pic: Optional[str] = None
 
 class RequestPenawaranUpdate(BaseModel):
     diminta_oleh: Optional[str] = None
@@ -20,6 +22,8 @@ class RequestPenawaranUpdate(BaseModel):
     pajak_harga_modal: Optional[str] = None
     durasi: Optional[int] = None
     total_pagu: Optional[Decimal] = None
+    nama_pic: Optional[str] = None
+    nomor_pic: Optional[str] = None
 
 class RequestPenawaranResponse(BaseModel):
     id: int
@@ -36,6 +40,8 @@ class RequestPenawaranResponse(BaseModel):
     total_harga_jual: Optional[Decimal] = None
     created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    nama_pic: Optional[str] = None
+    nomor_pic: Optional[str] = None
     @computed_field
     @property
     def sla_label(self) -> str:

@@ -47,6 +47,8 @@ class RequestPenawaran(Base):
         default="BARU",
         server_default="BARU",
     )
+    nama_pic = Column(String(150), nullable=True)
+    nomor_pic = Column(String(30), nullable=True)
     total_pagu = Column(Numeric(15, 2), nullable=True)
     total_harga_modal = Column(Numeric(15, 2), nullable=True)
     total_harga_jual = Column(Numeric(15, 2), nullable=True)
