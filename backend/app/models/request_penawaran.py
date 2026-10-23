@@ -52,7 +52,7 @@ class RequestPenawaran(Base):
     total_harga_jual = Column(Numeric(15, 2), nullable=True)
     
     tanggal_request = Column(Date, nullable=False, server_default=func.current_date())
-    durasi = Column(Integer, nullable=True)
+
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -63,4 +63,8 @@ class RequestPenawaran(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
     )
