@@ -212,3 +212,124 @@ def upload_branch_logo(
     db.refresh(branch)
 
     return branch
+
+def save_branch_image(
+    branch: Branch,
+    file: UploadFile,
+    field_name: str,
+    image_label: str,
+    db: Session,
+):
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Format {image_label} harus JPG, PNG, atau WEBP",
+        )
+
+    content = file.file.read(MAX_FILE_SIZE + 1)
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File {image_label} kosong",
+        )
+
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ukuran {image_label} maksimal 5 MB",
+        )
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    extension = ALLOWED_TYPES[file.content_type]
+    filename = f"{uuid.uuid4().hex}{extension}"
+    file_path = UPLOAD_DIR / filename
+
+    with open(file_path, "wb") as output:
+        output.write(content)
+
+    old_image = getattr(branch, field_name)
+
+    setattr(
+        branch,
+        field_name,
+        str(file_path).replace("\\", "/"),
+    )
+
+    try:
+        db.commit()
+        db.refresh(branch)
+    except Exception:
+        db.rollback()
+        if file_path.exists():
+            file_path.unlink()
+        raise
+
+    if old_image:
+        old_path = Path(old_image)
+        if old_path.exists() and old_path.is_file():
+            try:
+                old_path.unlink()
+            except OSError:
+                pass
+
+    return branch
+
+
+@router.post(
+    "/{branch_id}/cover-image",
+    response_model=BranchResponse,
+)
+def upload_branch_cover_image(
+    branch_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("SUPERADMIN")),
+):
+    branch = db.query(Branch).filter(
+        Branch.id == branch_id
+    ).first()
+
+    if not branch:
+        raise HTTPException(
+            status_code=404,
+            detail="Branch tidak ditemukan",
+        )
+
+    return save_branch_image(
+        branch=branch,
+        file=file,
+        field_name="cover_image",
+        image_label="cover image",
+        db=db,
+    )
+
+
+@router.post(
+    "/{branch_id}/signature-image",
+    response_model=BranchResponse,
+)
+def upload_branch_signature_image(
+    branch_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles("SUPERADMIN")),
+):
+    branch = db.query(Branch).filter(
+        Branch.id == branch_id
+    ).first()
+
+    if not branch:
+        raise HTTPException(
+            status_code=404,
+            detail="Branch tidak ditemukan",
+        )
+
+    return save_branch_image(
+        branch=branch,
+        file=file,
+        field_name="signature_image",
+        image_label="signature image",
+        db=db,
+    )

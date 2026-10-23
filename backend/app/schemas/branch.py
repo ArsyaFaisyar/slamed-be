@@ -29,3 +29,5 @@ class BranchResponse(BaseModel):
     website: str | None
     nama_direktur: str | None
     logo: str | None
+    cover_image: str | None
+    signature_image: str | None
