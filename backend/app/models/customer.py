@@ -1,10 +1,10 @@
-
 from sqlalchemy import (
     Column,
     Integer,
     String,
     DateTime,
     ForeignKey,
+    Text
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -33,6 +33,35 @@ class Customer(Base):
         Integer,
         ForeignKey("users.id"),
         nullable=True,
+    )
+
+    approval_status = Column(
+        String(20),
+        nullable=False,
+        default="APPROVED",
+        server_default="APPROVED",
+        index=True,
+    )
+
+    verified_by = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    verified_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    rejection_reason = Column(
+        Text,
+        nullable=True,
+    )
+
+    verifier_rel = relationship(
+        "User",
+        foreign_keys=[verified_by],
     )
 
     # Relasi ke tabel Area

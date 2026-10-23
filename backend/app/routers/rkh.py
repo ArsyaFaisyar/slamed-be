@@ -24,6 +24,11 @@ def validate_customer_project(
 
     if not customer:
         raise HTTPException(404, "Customer tidak ditemukan")
+    if customer.approval_status != "APPROVED":
+        raise HTTPException(
+            status_code=400,
+            detail="Customer belum disetujui, tidak dapat digunakan untuk RKH",
+        )
 
     project = db.query(ProjectProspek).filter(
         ProjectProspek.id == project_id,
@@ -69,7 +74,6 @@ def get_rkh(
     query = get_rkh_query(db, current_user)
 
     if sales_id is not None:
-        # Sales tidak bisa mengganti filter untuk melihat RKH orang lain.
         if (
             current_user.role == "SALES"
             and sales_id != current_user.id

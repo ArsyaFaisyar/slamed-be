@@ -164,7 +164,7 @@ def create_request(
             status_code=409,
             detail="Data terkait tidak valid atau sudah terdaftar.",
         )
-     except SQLAlchemyError:
+    except SQLAlchemyError:
         db.rollback()
         raise HTTPException(
             status_code=500,

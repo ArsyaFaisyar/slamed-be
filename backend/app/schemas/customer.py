@@ -14,7 +14,6 @@ class CustomerCreate(BaseModel):
     area_id: Optional[int] = None
     sales_id: Optional[int] = None
 
-
 class CustomerUpdate(BaseModel):
     nama_instansi: Optional[str] = None
     nama_pic: Optional[str] = None
@@ -39,6 +38,11 @@ class CustomerResponse(BaseModel):
 
     sales_id: Optional[int] = None
     sales_nama: Optional[str] = None
+
+    approval_status: str
+    verified_by: Optional[int] = None
+    verified_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
 
     created_at: Optional[datetime] = None
 

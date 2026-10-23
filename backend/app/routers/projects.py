@@ -95,6 +95,11 @@ def create_project(
             status_code=404,
             detail="Customer tidak ditemukan",
         )
+    if customer.approval_status != "APPROVED":
+        raise HTTPException(
+            status_code=400,
+            detail="Customer belum disetujui, project tidak dapat dibuat",
+        )
 
     sales = db.query(User).filter(
         User.id == data.sales_id,
@@ -181,6 +186,11 @@ def update_project(
             raise HTTPException(
                 status_code=404,
                 detail="Customer tidak ditemukan",
+            )
+        if customer.approval_status != "APPROVED":
+            raise HTTPException(
+                status_code=400,
+                detail="Customer belum disetujui, project tidak dapat menggunakan customer ini",
             )
 
     if updates.get("sales_id") is not None:
