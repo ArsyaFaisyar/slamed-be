@@ -2,49 +2,46 @@ import type { UserRole } from "./roles";
 
 export type AppRole = UserRole;
 
-const ALL_ROLES: AppRole[] = ["SUPERADMIN", "SPV", "SALES", "PPIC", "ADMIN_MARKETING", "ADMIN_KEUANGAN"];
+const ALL_ROLES: AppRole[] = ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES", "PPIC", "PAJAK", "PURCHASING", "ADMIN_MARKETING", "ADMIN_KEUANGAN"];
 
-// Permission mengikuti matriks RBAC yang kamu kirim.
-// SUPERADMIN mendapatkan seluruh akses.
 const rolePermissions: Record<string, AppRole[]> = {
   "/dashboard": ALL_ROLES,
 
-  "/transaksi/customer": ["SUPERADMIN", "SPV", "SALES"],
+  "/transaksi/customer": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES"],
+  "/transaksi/project": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES", "PPIC", "PAJAK", "PURCHASING"],
 
-  "/transaksi/project": ["SUPERADMIN", "SPV", "SALES", "PPIC"],
+  "/aktivitas/rkh": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES"],
+  "/aktivitas/lkh": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES"],
 
-  "/aktivitas/rkh": ["SUPERADMIN", "SPV", "SALES"],
-
-  "/aktivitas/lkh": ["SUPERADMIN", "SPV", "SALES"],
-
-  "/support/request-penawaran": ["SUPERADMIN", "SPV", "SALES", "PPIC"],
-
-  "/support/proses-ppic": ["SUPERADMIN", "SPV", "PPIC"],
-
-  "/support/terima-dan-kirim": ["SUPERADMIN", "SPV"],
-
-  "/support/permintaan-pajak": ["SUPERADMIN", "SPV"],
-
-  "/support/bopod-administrasi": ["SUPERADMIN", "SPV"],
-
-  "/support/penyelesaian-cashback": ["SUPERADMIN", "SPV"],
+  "/support/request-penawaran": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES", "PPIC", "PURCHASING"],
+  "/support/proses-ppic": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "PPIC"],
+  "/support/terima-dan-kirim": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "PURCHASING"],
+  "/support/permintaan-pajak": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "PAJAK"],
+  "/support/bopod-administrasi": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV"],
+  "/support/penyelesaian-cashback": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV"],
 
   "/laporan/sla-admin": ["SUPERADMIN"],
   "/laporan/sales": ["SUPERADMIN"],
 
   "/master/branch": ["SUPERADMIN"],
   "/master/media-pengadaan": ["SUPERADMIN"],
+  "/master/kategori-customer": ["SUPERADMIN"],
+  "/master/status-project": ["SUPERADMIN"],
   "/master/area": ["SUPERADMIN"],
   "/master/user": ["SUPERADMIN"],
 
-  "/setting/pengaturan": ["SUPERADMIN"],
-  "/setting/kategori-customer": ["SUPERADMIN"],
-  "/setting/template-penawaran": ["SUPERADMIN"],
-  "/setting/role": ["SUPERADMIN"],
-  "/setting/rbca": ["SUPERADMIN"],
+  "/setting/pengaturan": ["SUPERADMIN", "DIREKTUR"],
+  "/setting/template-penawaran": ["SUPERADMIN", "DIREKTUR"],
+  "/setting/role": ["SUPERADMIN", "DIREKTUR"],
+  "/setting/rbca": ["SUPERADMIN", "DIREKTUR"],
 };
 
-const dynamicRoutes: { pattern: RegExp; base: string }[] = [{ pattern: /^\/aktivitas\/lkh\/\d+$/, base: "/aktivitas/lkh" }];
+const dynamicRoutes: { pattern: RegExp; base: string }[] = [
+  { pattern: /^\/aktivitas\/lkh\/\d+$/, base: "/aktivitas/lkh" },
+  { pattern: /^\/master\/branch\/\d+$/, base: "/master/branch" },
+  { pattern: /^\/aktivitas\/lkh\/\d+\/request-penawaran$/, base: "/aktivitas/lkh" },
+  { pattern: /^\/aktivitas\/request-penawaran\/\d+$/, base: "/support/request-penawaran" },
+];
 
 function resolvePermissionPath(path: string): string {
   return dynamicRoutes.find(({ pattern }) => pattern.test(path))?.base ?? path;
@@ -53,15 +50,13 @@ function resolvePermissionPath(path: string): string {
 export function canAccessRoute(path: string, role?: string | null): boolean {
   if (!role) return false;
 
-  // Role yang belum memiliki pemetaan khusus
-  // hanya boleh mengakses Dashboard untuk sementara.
-  if (role === "ADMIN_MARKETING" || role === "ADMIN_KEUANGAN") {
-    return path === "/dashboard" || path === "/profile";
-  }
-
   if (role === "SUPERADMIN") return true;
 
   if (path === "/profile") return true;
+
+  if (role === "ADMIN_MARKETING" || role === "ADMIN_KEUANGAN") {
+    return path === "/dashboard";
+  }
 
   const allowedRoles = rolePermissions[resolvePermissionPath(path)];
 

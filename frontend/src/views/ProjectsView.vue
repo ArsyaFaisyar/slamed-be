@@ -14,12 +14,17 @@ import { deleteProject, getProjects, type Project } from '../api/projects'
 import { getCustomers, type Customer } from '../api/customers'
 import { getUsers, type User } from '../api/users'
 import type { UserRole } from '../constant/roles'
+import { useAuthStore } from '../stores/auth'
 import { getErrorMessage } from '../utils/error'
 import { parseDateString } from '../utils/date'
 
 const confirm = useConfirm()
 
 const SALES_ROLE: UserRole = 'SALES'
+const MANAGER_ROLES: UserRole[] = ['SUPERADMIN', 'SPV']
+
+const auth = useAuthStore()
+const canManage = computed(() => MANAGER_ROLES.includes(auth.user?.role as UserRole))
 
 const projects = ref<Project[]>([])
 const customers = ref<Customer[]>([])
@@ -60,7 +65,9 @@ function customerName(project: Project) {
 }
 
 function salesName(project: Project) {
-  return userNames.value.get(project.sales_id) ?? `ID ${project.sales_id}`
+  return project.sales_rel?.nama
+    ?? userNames.value.get(project.sales_id)
+    ?? `ID ${project.sales_id}`
 }
 
 function statusName(project: Project) {
@@ -176,7 +183,7 @@ async function fetchUsers() {
 onMounted(() => {
   fetchProjects()
   fetchCustomers()
-  fetchUsers()
+  if (canManage.value) fetchUsers()
 })
 </script>
 
@@ -217,6 +224,7 @@ onMounted(() => {
           />
 
           <Button
+            v-if="canManage"
             label="Tambah project"
             icon="pi pi-plus"
             size="small"
@@ -263,7 +271,7 @@ onMounted(() => {
               <th class="px-5 py-3 font-medium">Estimasi closing</th>
               <th class="px-5 py-3 font-medium">Status</th>
               <th class="px-5 py-3 font-medium">Dibuat</th>
-              <th class="px-5 py-3 text-center font-medium">Aksi</th>
+              <th v-if="canManage" class="px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
           </thead>
 
@@ -309,7 +317,7 @@ onMounted(() => {
 
               <td class="px-5 py-4 text-fg-muted">{{ formatDate(project.created_at) }}</td>
 
-              <td class="px-5 py-4 text-center">
+              <td v-if="canManage" class="px-5 py-4 text-center">
                 <div class="flex items-center justify-center gap-1">
                   <Button
                     icon="pi pi-pencil"

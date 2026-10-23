@@ -28,8 +28,11 @@ defineProps<{
         </dd>
       </div>
       <div>
-        <dt class="text-xs text-fg-muted">Durasi</dt>
-        <dd class="mt-1 font-semibold">{{ request.durasi }}</dd>
+        <dt class="text-xs text-fg-muted">SLA</dt>
+        <dd class="mt-1 font-semibold">{{ request.sla_label || '-' }}</dd>
+        <dd v-if="request.completed_at" class="mt-0.5 text-xs text-fg-muted">
+          Selesai {{ formatDate(request.completed_at) }}
+        </dd>
       </div>
       <div>
         <dt class="text-xs text-fg-muted">Jumlah barang</dt>

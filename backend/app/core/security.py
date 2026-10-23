@@ -10,7 +10,9 @@ if not SECRET_KEY:
     raise RuntimeError("JWT_SECRET_KEY belum diatur di file .env")
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480")
+)
 
 password_hash = PasswordHash.recommended()
 

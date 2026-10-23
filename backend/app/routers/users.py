@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -45,6 +44,11 @@ def get_users(
         query = query.filter(User.role == "SALES")
 
     return query.order_by(User.id.desc()).all()
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
 
 @router.get("/by-area/{area_id}", response_model=list[UserResponse])
 def get_sales_by_area(
