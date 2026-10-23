@@ -66,6 +66,10 @@ export type RequestItemUpdate = {
   satuan?: string;
 };
 
+export async function deleteRequestItem(requestId: number, itemId: number) {
+  await http.delete(`/request-penawaran/${requestId}/items/${itemId}`);
+}
+
 export interface RequestItemInput {
   nama_barang: string;
   jumlah: number;

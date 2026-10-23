@@ -18,6 +18,8 @@ const emit = defineEmits<{
   edited: []
   /** klik tombol edit data barang (bukan edit harga) */
   edit: [item: RequestItem]
+  /** klik tombol hapus barang */
+  delete: [item: RequestItem]
 }>()
 
 // Dipanggil dari @input (tiap ketikan) DAN @update:model-value (blur/clear),
@@ -46,7 +48,7 @@ function setPrice(id: number, value: number | null) {
             <th class="w-48 px-3 py-3 font-medium">Harga pagu</th>
             <th class="px-3 py-3 text-right font-medium">Subtotal</th>
           </template>
-          <th class="w-16 px-3 py-3 text-center font-medium">Aksi</th>
+          <th class="w-28 px-3 py-3 text-center font-medium">Aksi</th>
         </tr>
       </thead>
 
@@ -73,7 +75,6 @@ function setPrice(id: number, value: number | null) {
                 locale="id-ID"
                 :min-fraction-digits="0"
                 :min="0"
-                :max="10000000000"
                 placeholder="Harga pagu"
                 size="small"
                 fluid
@@ -85,7 +86,7 @@ function setPrice(id: number, value: number | null) {
               {{ formatRupiah(lineTotal(item, modelValue[item.id])) }}
             </td>
           </template>
-          <td class="px-3 py-2 text-center">
+          <td class="whitespace-nowrap px-3 py-2 text-center">
             <Button
               type="button"
               icon="pi pi-pencil"
@@ -96,6 +97,17 @@ function setPrice(id: number, value: number | null) {
               :aria-label="`Edit ${item.nama_barang}`"
               title="Edit barang"
               @click="emit('edit', item)"
+            />
+            <Button
+              type="button"
+              icon="pi pi-trash"
+              variant="text"
+              rounded
+              size="small"
+              severity="danger"
+              :aria-label="`Hapus ${item.nama_barang}`"
+              title="Hapus barang"
+              @click="emit('delete', item)"
             />
           </td>
         </tr>

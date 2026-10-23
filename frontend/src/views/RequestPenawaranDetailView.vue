@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
 import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
 import InputNumber from 'primevue/inputnumber'
 import Message from 'primevue/message'
 import Select from 'primevue/select'
@@ -18,6 +19,7 @@ import {
   MODE_PAGU_OPTIONS,
   PAJAK_OPTIONS,
   REQUEST_PENAWARAN_LIST_PATH,
+  deleteRequestItem,
   getRequestItems,
   getRequestPenawaran,
   updateRequestItem,
@@ -61,6 +63,11 @@ const itemsError = ref('')
 
 const itemDialogVisible = ref(false)
 const selectedItem = ref<RequestItem | null>(null)
+
+const deleteDialogVisible = ref(false)
+const deleteTarget = ref<RequestItem | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 
 /* ---------- Draft tiap section (form terpisah) ---------- */
 
@@ -361,6 +368,40 @@ function openEditItem(item: RequestItem) {
   itemDialogVisible.value = true
 }
 
+function openDeleteItem(item: RequestItem) {
+  deleteTarget.value = item
+  deleteError.value = ''
+  deleteDialogVisible.value = true
+}
+
+async function confirmDelete() {
+  const current = request.value
+  const target = deleteTarget.value
+  if (!current || !target) return
+
+  deleting.value = true
+  deleteError.value = ''
+
+  try {
+    await deleteRequestItem(current.id, target.id)
+    await Promise.all([loadItems(current.id), refreshRequest()])
+
+    // Buang draft barang yang dihapus, draft barang lain yang belum disimpan dipertahankan.
+    for (const draft of [paguDraft, modalDraft, jualDraft]) {
+      const next = { ...draft.value }
+      delete next[target.id]
+      draft.value = next
+    }
+
+    deleteDialogVisible.value = false
+    toast.add({ severity: 'success', summary: 'Dihapus', detail: `${target.nama_barang} berhasil dihapus`, life: 2500 })
+  } catch (error) {
+    deleteError.value = getErrorMessage(error, 'Gagal menghapus barang')
+  } finally {
+    deleting.value = false
+  }
+}
+
 function goBack() {
   router.push(REQUEST_PENAWARAN_LIST_PATH)
 }
@@ -497,6 +538,7 @@ function finish() {
           :loading="itemsLoading"
           @edited="markEdited(paguState)"
           @edit="openEditItem"
+          @delete="openDeleteItem"
         />
 
         <div class="flex flex-wrap items-center justify-end gap-4 border-t border-line pt-4 text-sm">
@@ -512,7 +554,6 @@ function finish() {
             :min="0"
             placeholder="Total pagu"
             size="small"
-            @input="setTotalPagu($event.value == null ? null : Number($event.value))"
             @update:model-value="setTotalPagu"
           />
           <span v-else class="tabular-nums">{{ formatRupiah(paguDraftTotal) }}</span>
@@ -532,7 +573,6 @@ function finish() {
         </div>
       </form>
 
-      <!-- ================= FORM 2: HARGA MODAL ================= -->
       <form
         v-if="items.length > 0"
         class="flex flex-col gap-4 rounded-xl border border-line bg-card p-5"
@@ -621,6 +661,27 @@ function finish() {
         </p>
         <Button label="Simpan dan lanjut" icon="pi pi-check" class="whitespace-nowrap" @click="finish" />
       </div>
+
+      <Dialog
+        v-model:visible="deleteDialogVisible"
+        modal
+        header="Hapus barang"
+        class="w-[calc(100vw-2rem)] max-w-md"
+        :draggable="false"
+        :closable="!deleting"
+        :close-on-escape="!deleting"
+      >
+        <p class="text-sm">
+          Hapus <span class="font-semibold">{{ deleteTarget?.nama_barang }}</span> dari request penawaran ini?
+          Tindakan ini tidak bisa dibatalkan.
+        </p>
+        <Message v-if="deleteError" severity="error" size="small" class="mt-3">{{ deleteError }}</Message>
+
+        <template #footer>
+          <Button label="Batal" variant="text" severity="secondary" :disabled="deleting" @click="deleteDialogVisible = false" />
+          <Button label="Hapus" icon="pi pi-trash" severity="danger" :loading="deleting" @click="confirmDelete" />
+        </template>
+      </Dialog>
 
       <RequestItemDialog
         v-model:visible="itemDialogVisible"
