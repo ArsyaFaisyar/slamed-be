@@ -7,8 +7,12 @@ export interface Customer {
   kontak_pic: string | null;
   kota: string | null;
   kategori: string | null;
-  area_id: number;
-  sales_id: number;
+
+  area_id: number | null;
+  area_nama: string | null;
+
+  sales_id: number | null;
+  sales_nama: string | null;
 }
 
 export interface CustomerInput {

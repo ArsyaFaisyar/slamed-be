@@ -1,6 +1,11 @@
 import { http } from "./http";
 import type { ProjectStatus } from "./projectStatuses";
 
+export interface ProjectSales {
+  id: number;
+  nama: string;
+}
+
 export interface Project {
   id: number;
   customer_id: number;
@@ -8,9 +13,10 @@ export interface Project {
   deskripsi: string | null;
   status_id: number | null;
   status_rel?: ProjectStatus | null;
+  sales_id: number;
+  sales_rel?: ProjectSales | null;
   nilai_proyek: string | null;
   estimasi_closing: string | null;
-  sales_id: number;
   created_at: string;
 }
 

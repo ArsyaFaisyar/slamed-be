@@ -2,6 +2,7 @@ import os
 import sys
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
+
 sys.path.insert(
     0,
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -23,6 +24,18 @@ DEMO_USERS = [
         "role": "SUPERADMIN",
     },
     {
+        "nama": "Direktur Demo",
+        "username": "direktur01",
+        "email": "direktur01@demo.com",
+        "role": "DIREKTUR",
+    },
+    {
+        "nama": "Manajer Demo",
+        "username": "manajer01",
+        "email": "manajer01@demo.com",
+        "role": "MANAJER",
+    },
+    {
         "nama": "Supervisor Demo",
         "username": "spv01",
         "email": "spv01@demo.com",
@@ -39,6 +52,18 @@ DEMO_USERS = [
         "username": "ppic01",
         "email": "ppic01@demo.com",
         "role": "PPIC",
+    },
+    {
+        "nama": "Pajak Demo",
+        "username": "pajak01",
+        "email": "pajak01@demo.com",
+        "role": "PAJAK",
+    },
+    {
+        "nama": "Purchasing Demo",
+        "username": "purchasing01",
+        "email": "purchasing01@demo.com",
+        "role": "PURCHASING",
     },
     {
         "nama": "Marketing Demo",

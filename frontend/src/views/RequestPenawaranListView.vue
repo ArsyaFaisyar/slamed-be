@@ -1,4 +1,3 @@
-
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
@@ -31,6 +30,8 @@ const REQUEST_STATUS = [
 interface RequestRef {
   id: number;
   status: string | null;
+  slaLabel: string | null;
+  completedAt: string | null;
 }
 
 interface Row {
@@ -188,6 +189,7 @@ const filteredRows = computed(() => {
       salesName(row.rkh),
       row.rkh.judul_kegiatan,
       row.request?.status,
+      row.request?.slaLabel,
     ].some((value) =>
       String(value ?? "")
         .toLowerCase()
@@ -209,6 +211,8 @@ function toRef(request: RequestPenawaran): RequestRef {
   return {
     id: request.id,
     status: request.status_request,
+    slaLabel: request.sla_label,
+    completedAt: request.completed_at,
   };
 }
 
@@ -226,7 +230,7 @@ async function loadRequests() {
       const id = recallRequestId(lkh.id);
 
       if (id !== null) {
-        map.set(lkh.id, { id, status: null });
+        map.set(lkh.id, { id, status: null, slaLabel: null, completedAt: null });
       }
     }
   }
@@ -369,7 +373,7 @@ onMounted(fetchData);
         :class="loading && 'pointer-events-none opacity-60'"
         :aria-busy="loading"
       >
-        <table class="w-full min-w-[960px] text-left text-sm">
+        <table class="w-full min-w-[1060px] text-left text-sm">
           <thead class="bg-sidebar text-fg-muted">
             <tr>
               <th class="px-5 py-3 font-medium">
@@ -387,6 +391,7 @@ onMounted(fetchData);
               <th class="px-5 py-3 font-medium">Project</th>
               <th class="px-5 py-3 font-medium">Status project</th>
               <th class="px-5 py-3 font-medium">Request</th>
+              <th class="px-5 py-3 font-medium">SLA</th>
 
               <th class="w-32 px-5 py-3 text-center font-medium">
                 Aksi
@@ -460,6 +465,21 @@ onMounted(fetchData);
                       : "Belum dibuat"
                   }}
                 </span>
+              </td>
+
+              <td class="px-5 py-4">
+                <template v-if="row.request?.slaLabel">
+                  <p class="font-medium">{{ row.request.slaLabel }}</p>
+
+                  <p
+                    v-if="row.request.completedAt"
+                    class="mt-0.5 text-xs text-fg-muted"
+                  >
+                    Selesai {{ formatDate(row.request.completedAt) }}
+                  </p>
+                </template>
+
+                <span v-else class="text-fg-muted">-</span>
               </td>
 
               <td class="px-5 py-4 text-center">

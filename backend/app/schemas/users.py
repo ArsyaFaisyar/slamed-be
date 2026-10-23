@@ -1,15 +1,7 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from typing import Literal, Optional
+from typing import Optional
 
-
-UserRole = Literal[
-    "SUPERADMIN",
-    "SPV",
-    "SALES",
-    "PPIC",
-    "ADMIN_MARKETING",
-    "ADMIN_KEUANGAN",
-]
+from app.core.roles import UserRole
 
 
 class UserCreate(BaseModel):
@@ -30,6 +22,7 @@ class UserUpdate(BaseModel):
     branch_id: Optional[int] = None
     area_id: Optional[int] = None
 
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -41,8 +34,11 @@ class UserResponse(BaseModel):
     branch_id: Optional[int] = None
     area_id: Optional[int] = None
 
+
 class UserPasswordReset(BaseModel):
     password: str = Field(min_length=8)
+
+
 class ChangePasswordRequest(BaseModel):
     password_lama: str
     password_baru: str = Field(min_length=6)

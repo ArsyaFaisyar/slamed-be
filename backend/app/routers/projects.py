@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session, joinedload
 
@@ -14,21 +15,22 @@ from app.schemas.project_prospek import (
 )
 from app.core.dependencies import get_current_user, require_roles
 from app.utils.project_log import catat_project_log
+from app.core.roles import PROJECT_VIEW_ROLES
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
+
 def get_project_query(db: Session, current_user: User):
     query = db.query(ProjectProspek).options(
-        joinedload(ProjectProspek.status_rel)
+        joinedload(ProjectProspek.status_rel),
+        joinedload(ProjectProspek.sales_rel),
     )
 
     if current_user.role == "SALES":
-        query = query.join(
-            Customer,
-            ProjectProspek.customer_id == Customer.id,
-        ).filter(ProjectProspek.sales_id == current_user.id)
-
-    elif current_user.role not in ("SUPERADMIN", "SPV"):
+        query = query.filter(
+            ProjectProspek.sales_id == current_user.id
+        )
+    elif current_user.role not in PROJECT_VIEW_ROLES:
         raise HTTPException(
             status_code=403,
             detail="Kamu tidak memiliki akses ke data proyek",
@@ -72,7 +74,11 @@ def get_project(
     return project
 
 
-@router.post("/", response_model=ProjectProspekResponse, status_code=201)
+@router.post(
+    "/",
+    response_model=ProjectProspekResponse,
+    status_code=201,
+)
 def create_project(
     data: ProjectProspekCreate,
     db: Session = Depends(get_db),
@@ -89,17 +95,19 @@ def create_project(
             status_code=404,
             detail="Customer tidak ditemukan",
         )
+
     sales = db.query(User).filter(
         User.id == data.sales_id,
         User.role == "SALES",
+        User.is_active == 1,
     ).first()
 
     if not sales:
         raise HTTPException(
             status_code=404,
-            detail="Sales tidak ditemukan",
+            detail="Sales tidak ditemukan atau tidak aktif",
         )
-    
+
     initial_status = (
         db.query(ProjectStatus)
         .filter(ProjectStatus.is_active == True)
@@ -110,12 +118,13 @@ def create_project(
     if not initial_status:
         raise HTTPException(
             status_code=400,
-            detail="Belum ada status project aktif"
+            detail="Belum ada status project aktif",
         )
 
     project = ProjectProspek(
         customer_id=data.customer_id,
         nama_project=data.nama_project,
+        deskripsi=data.deskripsi,
         nilai_proyek=data.nilai_proyek,
         estimasi_closing=data.estimasi_closing,
         sales_id=data.sales_id,
@@ -134,10 +143,15 @@ def create_project(
     db.commit()
     db.refresh(project)
 
-    return project
+    return get_project_query(db, current_user).filter(
+        ProjectProspek.id == project.id
+    ).first()
 
 
-@router.patch("/{project_id}", response_model=ProjectProspekResponse)
+@router.patch(
+    "/{project_id}",
+    response_model=ProjectProspekResponse,
+)
 def update_project(
     project_id: int,
     data: ProjectProspekUpdate,
@@ -167,6 +181,19 @@ def update_project(
             raise HTTPException(
                 status_code=404,
                 detail="Customer tidak ditemukan",
+            )
+
+    if updates.get("sales_id") is not None:
+        sales = db.query(User).filter(
+            User.id == updates["sales_id"],
+            User.role == "SALES",
+            User.is_active == 1,
+        ).first()
+
+        if not sales:
+            raise HTTPException(
+                status_code=404,
+                detail="Sales tidak ditemukan atau tidak aktif",
             )
 
     for field, value in updates.items():
@@ -218,9 +245,10 @@ def update_project(
     
 
     db.commit()
-    db.refresh(project)
 
-    return project
+    return get_project_query(db, current_user).filter(
+        ProjectProspek.id == project_id
+    ).first()
 
 
 @router.delete("/{project_id}", status_code=204)

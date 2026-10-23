@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.roles import REQUEST_EDIT_ROLES, REQUEST_VIEW_ROLES
 from app.models.user import User
 from app.models.lkh import LKH
 from app.models.rkh import RKH
@@ -51,7 +52,7 @@ def refresh_request_completion(db, request):
 REQUEST_STATUS_KEYS = ("request penawaran", "req penawaran", "penawaran")
 
 
-def get_request_access(db, request_id, user):
+def get_request_access(db, request_id, user, write=False):
     request = db.query(RequestPenawaran).filter(
         RequestPenawaran.id == request_id
     ).first()
@@ -67,7 +68,9 @@ def get_request_access(db, request_id, user):
     if user.role == "SALES" and lkh.sales_id != user.id:
         raise HTTPException(403, "Tidak memiliki akses")
 
-    if user.role not in ("SALES", "SPV", "SUPERADMIN"):
+    allowed = REQUEST_EDIT_ROLES if write else REQUEST_VIEW_ROLES
+
+    if user.role not in allowed:
         raise HTTPException(403, "Tidak memiliki akses")
 
     return request
@@ -161,16 +164,12 @@ def create_request(
             status_code=409,
             detail="Data terkait tidak valid atau sudah terdaftar.",
         )
-    except SQLAlchemyError:
+     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(
             status_code=500,
             detail="Terjadi kesalahan saat menyimpan Request Penawaran.",
-        )  
-        raise HTTPException(
-                status_code=409,
-                detail="Data tidak dapat disimpan karena terkait dengan data lain yang tidak valid atau sudah terdaftar.",
-            )
+        )
 
 @router.get("/", response_model=list[RequestPenawaranResponse])
 def get_requests(
@@ -178,7 +177,7 @@ def get_requests(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if user.role not in ("SALES", "SPV", "SUPERADMIN"):
+    if user.role not in REQUEST_VIEW_ROLES:
         raise HTTPException(403, "Tidak memiliki akses")
 
     query = db.query(RequestPenawaran)
@@ -216,7 +215,7 @@ def update_request(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    request = get_request_access(db, request_id, user)
+    request = get_request_access(db, request_id, user, write=True)
     updates = data.model_dump(exclude_unset=True)
 
     if user.role == "SALES":
@@ -299,7 +298,7 @@ def create_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    request = get_request_access(db, request_id, user)
+    request = get_request_access(db, request_id, user, write=True)
     item = RequestPenawaranItem(
         request_penawaran_id=request_id,
         **data.model_dump(),
@@ -347,7 +346,7 @@ def update_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    request = get_request_access(db, request_id, user)
+    request = get_request_access(db, request_id, user, write=True)
     item = db.query(RequestPenawaranItem).filter(
         RequestPenawaranItem.id == item_id,
         RequestPenawaranItem.request_penawaran_id == request_id,
@@ -401,7 +400,7 @@ def delete_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    request = get_request_access(db, request_id, user)
+    request = get_request_access(db, request_id, user, write=True)
     item = (
         db.query(RequestPenawaranItem)
         .filter(

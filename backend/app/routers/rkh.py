@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
@@ -9,6 +8,7 @@ from app.models.rkh import RKH
 from app.models.user import User
 from app.schemas.rkh import RKHCreate, RKHUpdate, RKHResponse
 from app.core.dependencies import get_current_user, require_roles
+from app.core.roles import RKH_VIEW_ROLES
 
 router = APIRouter(prefix="/rkh", tags=["RKH"])
 
@@ -50,7 +50,7 @@ def get_rkh_query(db: Session, current_user: User):
 
     if current_user.role == "SALES":
         query = query.filter(RKH.sales_id == current_user.id)
-    elif current_user.role not in ("SUPERADMIN", "SPV"):
+    elif current_user.role not in RKH_VIEW_ROLES:
         raise HTTPException(
             status_code=403,
             detail="Kamu tidak memiliki akses ke RKH",

@@ -2,7 +2,6 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import InputText from 'primevue/inputtext'
-import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -27,7 +26,7 @@ import { formatDate } from '../utils/date'
 
 const LIST_PATH = '/aktivitas/lkh'
 
-type Field = 'diminta_oleh' | 'media_pengadaan_id' | 'branch_id' | 'mode_pagu' | 'pajak_harga_modal' | 'durasi'
+type Field = 'diminta_oleh' | 'media_pengadaan_id' | 'branch_id' | 'mode_pagu' | 'pajak_harga_modal'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,7 +48,6 @@ const form = reactive({
   branch_id: null as number | null,
   mode_pagu: 'DETAIL' as string | null,
   pajak_harga_modal: null as string | null,
-  durasi: null as number | null,
 })
 
 const submitted = ref(false)
@@ -68,7 +66,6 @@ const clientErrors = computed<Record<Field, string>>(() => ({
   branch_id: form.branch_id === null ? 'Branch/PT wajib dipilih' : '',
   mode_pagu: form.mode_pagu ? '' : 'Mode pagu wajib dipilih',
   pajak_harga_modal: form.pajak_harga_modal ? '' : 'Pajak harga modal wajib dipilih',
-  durasi: form.durasi !== null && form.durasi > 0 ? '' : 'Durasi minimal 1',
 }))
 
 function fieldError(field: Field) {
@@ -143,7 +140,6 @@ async function onSubmit() {
       branch_id: form.branch_id as number,
       mode_pagu: form.mode_pagu as string,
       pajak_harga_modal: form.pajak_harga_modal as string,
-      durasi: form.durasi as number,
     })
 
     rememberRequestId(lkhId.value, created.id)
@@ -301,23 +297,6 @@ function goBack() {
           />
           <Message v-if="fieldError('pajak_harga_modal')" severity="error" size="small" variant="simple">
             {{ fieldError('pajak_harga_modal') }}
-          </Message>
-        </div>
-
-        <div class="flex flex-col gap-1.5">
-          <label for="rp-durasi" class="text-sm font-medium">
-            Durasi <span class="text-red-500">*</span>
-          </label>
-          <InputNumber
-            v-model="form.durasi"
-            input-id="rp-durasi"
-            :min="1"
-            :use-grouping="false"
-            fluid
-            :invalid="!!fieldError('durasi')"
-          />
-          <Message v-if="fieldError('durasi')" severity="error" size="small" variant="simple">
-            {{ fieldError('durasi') }}
           </Message>
         </div>
 

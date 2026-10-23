@@ -32,7 +32,7 @@ export async function login(payload: LoginPayload): Promise<LoginResponse> {
   return data;
 }
 
-export async function getMe(userId: number): Promise<AuthUser> {
-  const { data } = await http.get<AuthUser>(`/users/${userId}`);
+export async function getMe(): Promise<AuthUser> {
+  const { data } = await http.get<AuthUser>("/users/me");
   return data;
 }
