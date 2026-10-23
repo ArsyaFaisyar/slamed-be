@@ -20,6 +20,7 @@ const viewLoaders: Record<string, () => Promise<unknown>> = {
   "/master/status-project": () => import("../views/ProjectStatusesView.vue"),
   "/aktivitas/rkh": () => import("../views/RkhView.vue"),
   "/aktivitas/lkh": () => import("../views/LkhView.vue"),
+  "/support/request-penawaran": () => import("../views/RequestPenawaranListView.vue"),
 };
 
 const pages: RouteRecordRaw[] = leaves.map((leaf) => ({
@@ -53,6 +54,8 @@ const router = createRouter({
           component: () => import("../views/LkhFormView.vue"),
           meta: { title: "Form LKH" },
         },
+        { path: "/aktivitas/lkh/:lkhId/request-penawaran", component: () => import("../views/RequestPenawaranView.vue"), meta: { requiresAuth: true } },
+        { path: "/aktivitas/request-penawaran/:requestId", component: () => import("../views/RequestPenawaranDetailView.vue"), meta: { requiresAuth: true } },
       ],
     },
     {

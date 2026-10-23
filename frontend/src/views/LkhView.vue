@@ -6,6 +6,8 @@ import Select from "primevue/select";
 import Button from "primevue/button";
 import Message from "primevue/message";
 import ConfirmDialog from "primevue/confirmdialog";
+import Menu from "primevue/menu";
+import type { MenuItem } from "primevue/menuitem";
 import { useConfirm } from "primevue/useconfirm";
 
 import {
@@ -22,6 +24,12 @@ import { getUsers, type User } from "../api/users";
 import { useAuthStore } from "../stores/auth";
 import { getErrorMessage } from "../utils/error";
 import { formatDate } from "../utils/date";
+
+import {
+  getRequestPenawaranList,
+  recallRequestId,
+  requestPenawaranDetailPath,
+} from "../api/requestPenawaran";
 
 const stateLabel: Record<string, string> = {
   OPEN: "Open",
@@ -57,6 +65,9 @@ const lkhList = ref<Lkh[]>([]);
 const customers = ref<Customer[]>([]);
 const projects = ref<Project[]>([]);
 const users = ref<User[]>([]);
+
+const requestIdByLkh = ref<Map<number, number>>(new Map());
+const requestListLoaded = ref(false);
 
 const search = ref("");
 const stateFilter = ref<string | null>(null);
@@ -108,6 +119,17 @@ function lkhOf(rkh: Rkh) {
   return lkhByRkh.value.get(rkh.id) ?? null;
 }
 
+function requestIdOf(lkhId: number): number | null {
+  const fromServer = requestIdByLkh.value.get(lkhId);
+  if (fromServer !== undefined) return fromServer;
+  return requestListLoaded.value ? null : recallRequestId(lkhId);
+}
+
+function hasRequest(rkh: Rkh): boolean {
+  const lkh = lkhOf(rkh);
+  return lkh ? requestIdOf(lkh.id) !== null : false;
+}
+
 function stateOf(rkh: Rkh): string {
   return isLkhDone(lkhOf(rkh)) ? "DONE" : "OPEN";
 }
@@ -134,6 +156,66 @@ const filteredRkh = computed(() => {
     );
   });
 });
+
+const REQUEST_STATUS = [
+  "request penawaran",
+  "req penawaran",
+  "penawaran",
+];
+
+const isRequestStage = (rkh: Rkh) => {
+  const name = projectById.value
+    .get(rkh.project_id)
+    ?.status_rel?.nama;
+
+  const normalizedName = (name ?? "")
+    .toLowerCase()
+    .trim();
+
+  return REQUEST_STATUS.some((status) =>
+    normalizedName.includes(status)
+  );
+};
+
+const projectById = computed(
+  () => new Map(projects.value.map((project) => [project.id, project])),
+);
+
+
+const rowMenu = ref<InstanceType<typeof Menu> | null>(null);
+const rowMenuItems = ref<MenuItem[]>([]);
+
+function openRowMenu(event: Event, rkh: Rkh) {
+  const lkh = lkhOf(rkh);
+  if (!lkh) return;
+
+  const requestId = requestIdOf(lkh.id);
+  const sudahRequest = requestId !== null;
+
+  rowMenuItems.value = sudahRequest
+    ? [
+        {
+          label: "Request penawaran (sudah dibuat)",
+          icon: "pi pi-file-edit",
+          disabled: true,
+        },
+        {
+          label: "Lihat request penawaran",
+          icon: "pi pi-eye",
+          command: () => router.push(requestPenawaranDetailPath(requestId)),
+        },
+      ]
+    : [
+        {
+          label: "Request penawaran",
+          icon: "pi pi-file-edit",
+          command: () =>
+            router.push(`/aktivitas/lkh/${lkh.id}/request-penawaran`),
+        },
+      ];
+
+  rowMenu.value?.toggle(event);
+}
 
 function openForm(rkh: Rkh) {
   router.push(`/aktivitas/lkh/${rkh.id}`);
@@ -201,6 +283,21 @@ function confirmReopen(rkh: Rkh) {
   });
 }
 
+async function loadRequests() {
+  const map = new Map<number, number>();
+
+  try {
+    for (const request of await getRequestPenawaranList()) {
+      if (!map.has(request.lkh_id)) map.set(request.lkh_id, request.id);
+    }
+    requestListLoaded.value = true;
+  } catch {
+    requestListLoaded.value = false;
+  }
+
+  requestIdByLkh.value = map;
+}
+
 async function fetchData() {
   loading.value = true;
   errorMessage.value = "";
@@ -228,6 +325,8 @@ async function fetchData() {
   } finally {
     loading.value = false;
   }
+
+  await loadRequests();
 
   try {
     users.value = await getUsers();
@@ -434,17 +533,21 @@ onMounted(fetchData);
                       v-tooltip.top="'Edit LKH'"
                       @click="openForm(rkh)"
                     />
-
-                    <Button
-                      icon="pi pi-trash"
-                      variant="text"
-                      rounded
-                      severity="danger"
-                      aria-label="Hapus LKH"
-                      v-tooltip.top="'Hapus LKH'"
-                      @click="confirmDelete(rkh)"
-                    />
                   </template>
+
+                  <Button
+                    v-if="
+                      hasRequest(rkh) ||
+                      (stateOf(rkh) === 'DONE' && isRequestStage(rkh))
+                    "
+                    icon="pi pi-ellipsis-v"
+                    variant="text"
+                    rounded
+                    severity="secondary"
+                    aria-label="Menu lainnya"
+                    aria-haspopup="true"
+                    @click="openRowMenu($event, rkh)"
+                  />
                 </div>
               </td>
             </tr>
@@ -456,5 +559,7 @@ onMounted(fetchData);
         Total {{ rkhList.length }} kegiatan
       </footer>
     </section>
+
+    <Menu ref="rowMenu" :model="rowMenuItems" popup />
   </div>
 </template>

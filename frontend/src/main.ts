@@ -17,6 +17,7 @@ import { setUnauthorizedHandler } from "./api/http";
 import { useAuthStore } from "./stores/auth";
 import { applyThemeMode, getInitialThemeMode, primeVueOptions } from "./theme";
 import ConfirmationService from "primevue/confirmationservice";
+import ToastService from "primevue/toastservice";
 
 applyThemeMode(getInitialThemeMode());
 
@@ -27,6 +28,7 @@ app.use(router);
 app.use(PrimeVue, primeVueOptions);
 app.directive("tooltip", Tooltip);
 app.use(ConfirmationService);
+app.use(ToastService);
 
 setUnauthorizedHandler(() => {
   useAuthStore().logout();

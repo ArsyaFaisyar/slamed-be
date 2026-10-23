@@ -398,7 +398,5 @@ onMounted(fetchItems)
       :project-options="projectOptions"
       @updated="fetchItems"
     />
-
-    <ConfirmDialog />
   </div>
 </template>
