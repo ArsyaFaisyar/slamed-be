@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel, Field
 from app.db.database import get_db
 from app.models.customer import Customer
 from app.models.user import User
@@ -12,6 +13,7 @@ from app.schemas.customer import (
 )
 from app.core.dependencies import get_current_user, require_roles
 from app.core.roles import CUSTOMER_VIEW_ROLES
+from datetime import datetime, timezone
 
 router = APIRouter(
     prefix="/customers",
@@ -86,7 +88,7 @@ def create_customer(
     data: CustomerCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(
-        require_roles("SUPERADMIN", "SPV")
+        require_roles("SALES","SUPERADMIN", "SPV")
     ),
 ):
     if data.sales_id is not None:
@@ -102,7 +104,37 @@ def create_customer(
                 detail="Sales tidak ditemukan, tidak aktif, atau role bukan SALES",
             )
     validate_area(db, data.area_id)
-    customer = Customer(**data.model_dump())
+
+    if current_user.role == "SALES":
+        # Sales hanya bisa mengajukan customer untuk dirinya sendiri.
+        customer = Customer(
+            **data.model_dump(exclude={"sales_id"}),
+            sales_id=current_user.id,
+            approval_status="PENDING",
+        )
+    else:
+        sales_id = data.sales_id
+
+        if sales_id is not None:
+            sales = db.query(User).filter(
+                User.id == sales_id,
+                User.role == "SALES",
+                User.is_active == 1,
+            ).first()
+
+            if not sales:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Sales tidak ditemukan, tidak aktif, atau role bukan SALES",
+                )
+
+        customer = Customer(
+            **data.model_dump(),
+            approval_status="APPROVED",
+            verified_by=current_user.id,
+            verified_at=datetime.now(timezone.utc),
+        )
+
     db.add(customer)
     db.commit()
     db.refresh(customer)
@@ -116,7 +148,7 @@ def update_customer(
     data: CustomerUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(
-        require_roles("SUPERADMIN", "SPV")
+        require_roles("SALES", "SPV", "SUPERADMIN")
     ),
 ):
     customer = db.query(Customer).filter(
@@ -130,29 +162,87 @@ def update_customer(
         )
 
     updates = data.model_dump(exclude_unset=True)
-    if "area_id" in updates:
-        validate_area(db, updates["area_id"])
-    if "sales_id" in updates and updates["sales_id"] is not None:
-        sales = db.query(User).filter(
-            User.id == updates["sales_id"],
-            User.role == "SALES",
-            User.is_active == 1,
-        ).first()
 
-        if not sales:
+    if current_user.role == "SALES":
+        if customer.sales_id != current_user.id:
             raise HTTPException(
-                status_code=400,
-                detail="Sales tidak ditemukan, tidak aktif, atau role bukan SALES",
+                status_code=403,
+                detail="Customer ini bukan tanggung jawabmu",
             )
+
+        if customer.approval_status == "APPROVED":
+            raise HTTPException(
+                status_code=403,
+                detail="Customer yang sudah disetujui tidak bisa diedit oleh Sales",
+            )
+
+        # Sales tidak boleh memindahkan kepemilikan atau mengubah status approval.
+        updates.pop("sales_id", None)
+
+    else:
+        if "area_id" in updates:
+            validate_area(db, updates["area_id"])
+
+        if "sales_id" in updates and updates["sales_id"] is not None:
+            sales = db.query(User).filter(
+                User.id == updates["sales_id"],
+                User.role == "SALES",
+                User.is_active == 1,
+            ).first()
+
+            if not sales:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Sales tidak ditemukan, tidak aktif, atau role bukan SALES",
+                )
 
     for field, value in updates.items():
         setattr(customer, field, value)
+
+    if current_user.role == "SALES":
+        customer.approval_status = "PENDING"
+        customer.verified_by = None
+        customer.verified_at = None
+        customer.rejection_reason = None
 
     db.commit()
     db.refresh(customer)
 
     return customer
 
+@router.patch("/{customer_id}/approve", response_model=CustomerResponse)
+def approve_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("SPV", "SUPERADMIN")
+    ),
+):
+    customer = db.query(Customer).filter(
+        Customer.id == customer_id
+    ).first()
+
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail="Customer tidak ditemukan",
+        )
+
+    if customer.approval_status == "APPROVED":
+        raise HTTPException(
+            status_code=400,
+            detail="Customer sudah disetujui",
+        )
+
+    customer.approval_status = "APPROVED"
+    customer.verified_by = current_user.id
+    customer.verified_at = datetime.now(timezone.utc)
+    customer.rejection_reason = None
+
+    db.commit()
+    db.refresh(customer)
+
+    return customer
 
 @router.delete("/{customer_id}", status_code=204)
 def delete_customer(
@@ -176,3 +266,47 @@ def delete_customer(
     db.commit()
 
     return Response(status_code=204)
+
+class CustomerRejectRequest(BaseModel):
+    alasan: str = Field(min_length=1, max_length=1000)
+
+@router.patch("/{customer_id}/reject", response_model=CustomerResponse)
+def reject_customer(
+    customer_id: int,
+    data: CustomerRejectRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("SPV", "SUPERADMIN")
+    ),
+):
+    customer = db.query(Customer).filter(
+        Customer.id == customer_id
+    ).first()
+
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail="Customer tidak ditemukan",
+        )
+
+    if customer.approval_status == "APPROVED":
+        raise HTTPException(
+            status_code=400,
+            detail="Customer yang sudah disetujui tidak bisa ditolak",
+        )
+
+    customer.approval_status = "REJECTED"
+    customer.verified_by = current_user.id
+    customer.verified_at = datetime.now(timezone.utc)
+    customer.rejection_reason = data.alasan.strip()
+
+    if not customer.rejection_reason:
+        raise HTTPException(
+            status_code=422,
+            detail="Alasan penolakan wajib diisi",
+        )
+
+    db.commit()
+    db.refresh(customer)
+
+    return customer
