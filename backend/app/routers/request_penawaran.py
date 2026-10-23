@@ -21,12 +21,32 @@ from app.schemas.request_penawaran import (
     RequestPenawaranItemResponse,
 )
 from app.models.media_pengadaan import MediaPengadaan
+from datetime import datetime, timezone
 
 router = APIRouter(
     prefix="/request-penawaran",
     tags=["Request Penawaran"],
 )
 
+def refresh_request_completion(db, request):
+    items = (
+        db.query(RequestPenawaranItem)
+        .filter(
+            RequestPenawaranItem.request_penawaran_id == request.id
+        )
+        .all()
+    )
+
+    semua_harga_lengkap = bool(items) and all(
+        item.harga_modal is not None
+        and item.harga_jual is not None
+        for item in items
+    )
+
+    if semua_harga_lengkap and request.completed_at is None:
+        request.completed_at = datetime.now(timezone.utc)
+    elif not semua_harga_lengkap:
+        request.completed_at = None
 REQUEST_STATUS_KEYS = ("request penawaran", "req penawaran", "penawaran")
 
 
@@ -130,15 +150,18 @@ def create_request(
         db.rollback()
         raise HTTPException(
             status_code=409,
-            detail="Data tidak dapat disimpan karena terkait dengan data lain yang tidak valid atau sudah terdaftar.",
+            detail="Data terkait tidak valid atau sudah terdaftar.",
         )
 
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail="Terjadi kesalahan saat menyimpan Request Penawaran. Silakan coba lagi.",
-        )
+            detail="Terjadi kesalahan saat menyimpan Request Penawaran.",
+        )  raise HTTPException(
+                status_code=409,
+                detail="Data tidak dapat disimpan karena terkait dengan data lain yang tidak valid atau sudah terdaftar.",
+            )
 
 
 @router.get("/", response_model=list[RequestPenawaranResponse])
@@ -268,21 +291,31 @@ def create_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    get_request_access(db, request_id, user)
-
+    request = get_request_access(db, request_id, user)
     item = RequestPenawaranItem(
         request_penawaran_id=request_id,
         **data.model_dump(),
     )
-
     try:
         db.add(item)
+        db.flush()
+
+        refresh_request_completion(db, request)
         db.commit()
         db.refresh(item)
         return item
-    except Exception:
+    except IntegrityError:
         db.rollback()
-        raise
+        raise HTTPException(
+            status_code=409,
+            detail="Item tidak dapat disimpan karena data tidak valid.",
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Terjadi kesalahan saat menyimpan item.",
+        )
 
 
 @router.patch(
@@ -296,8 +329,7 @@ def update_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    get_request_access(db, request_id, user)
-
+    request = get_request_access(db, request_id, user)
     item = db.query(RequestPenawaranItem).filter(
         RequestPenawaranItem.id == item_id,
         RequestPenawaranItem.request_penawaran_id == request_id,
@@ -321,6 +353,7 @@ def update_item(
         setattr(item, field, value)
 
     try:
+        refresh_request_completion(db, request)
         db.commit()
         db.refresh(item)
         return item
@@ -336,9 +369,7 @@ def delete_item(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # Pastikan request ada dan user punya akses
-    get_request_access(db, request_id, user)
-
+    request = get_request_access(db, request_id, user)
     item = (
         db.query(RequestPenawaranItem)
         .filter(
@@ -356,13 +387,15 @@ def delete_item(
 
     try:
         db.delete(item)
+        db.flush()
+
+        refresh_request_completion(db, request)
         db.commit()
 
         return {"message": "Item berhasil dihapus."}
-
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail="Terjadi kesalahan saat menghapus item. Silakan coba lagi.",
+            detail="Terjadi kesalahan saat menghapus item.",
         )

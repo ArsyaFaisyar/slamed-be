@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 class RequestPenawaranCreate(BaseModel):
     lkh_id: int
@@ -11,7 +11,6 @@ class RequestPenawaranCreate(BaseModel):
     branch_id: Optional[int] = None
     mode_pagu: str = "DETAIL"
     pajak_harga_modal: Optional[str] = None
-    durasi: Optional[int] = None
 
 class RequestPenawaranUpdate(BaseModel):
     diminta_oleh: Optional[str] = None
@@ -31,12 +30,17 @@ class RequestPenawaranResponse(BaseModel):
     branch_id: Optional[int] = None
     mode_pagu: str
     pajak_harga_modal: Optional[str] = None
-    durasi: Optional[int] = None
     status_request: str
     total_pagu: Optional[Decimal] = None
     total_harga_modal: Optional[Decimal] = None
     total_harga_jual: Optional[Decimal] = None
     created_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    @computed_field
+    @property
+    def sla_label(self) -> str:
+        from app.utils.sla import hitung_sla
+        return hitung_sla(self.created_at, self.completed_at)
 
     model_config = ConfigDict(from_attributes=True)
 
