@@ -9,8 +9,11 @@ from app.models.rkh import RKH
 from app.models.lkh import LKH
 from app.models.user import User
 from app.models.project_prospek import ProjectProspek
+from app.models.project_status_history import ProjectStatusHistory
+from app.models.project_status import ProjectStatus
 from app.schemas.lkh import LKHCreate, LKHUpdate, LKHResponse
 from app.core.dependencies import get_current_user, require_roles
+from app.utils.project_log import catat_project_log
 from app.core.roles import LKH_VIEW_ROLES
 from datetime import date
 
@@ -110,6 +113,23 @@ def create_lkh(
         )
 
         db.add(laporan)
+        db.flush()
+        project = (
+            db.query(ProjectProspek)
+            .filter(ProjectProspek.id == rkh.project_id)
+            .first()
+        )
+        if project:
+            catat_project_log(
+                db=db,
+                project_id=project.id,
+                user_id=current_user.id,
+                aktivitas="Laporan kunjungan dibuat",
+                deskripsi=(
+                    f"Laporan kunjungan untuk RKH tanggal "
+                    f"{rkh.tanggal_rencana} telah dibuat."
+                ),
+            )
         rkh.status = "CLOSED"
         db.commit()
         db.refresh(laporan)

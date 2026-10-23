@@ -22,6 +22,7 @@ from app.routers.media_pengadaan import router as media_pengadaan_router
 from app.routers.customer_categories import router as customer_categories_router
 from app.routers.project_statuses import router as project_statuses_router
 from app.routers.request_penawaran import router as request_penawaran_router
+from app.routers.project_log import router as project_log_router
 app = FastAPI(title="Sales Management System API", version="1.0.0")
 
 app.add_middleware(
@@ -53,6 +54,7 @@ app.include_router(areas_router)
 app.include_router(media_pengadaan_router)
 app.include_router(project_statuses_router)
 app.include_router(request_penawaran_router)
+app.include_router(project_log_router)
 
 @app.get("/")
 def root():

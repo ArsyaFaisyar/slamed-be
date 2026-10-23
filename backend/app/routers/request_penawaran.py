@@ -23,6 +23,7 @@ from app.schemas.request_penawaran import (
 )
 from app.models.media_pengadaan import MediaPengadaan
 from datetime import datetime, timezone
+from app.utils.project_log import catat_project_log
 
 router = APIRouter(
     prefix="/request-penawaran",
@@ -74,6 +75,18 @@ def get_request_access(db, request_id, user, write=False):
 
     return request
 
+def get_project_from_request(db: Session, request):
+    lkh = db.query(LKH).filter(LKH.id == request.lkh_id).first()
+    if not lkh:
+        return None
+
+    rkh = db.query(RKH).filter(RKH.id == lkh.rkh_id).first()
+    if not rkh:
+        return None
+
+    return db.query(ProjectProspek).filter(
+        ProjectProspek.id == rkh.project_id
+    ).first()
 
 @router.post("/", response_model=RequestPenawaranResponse, status_code=201)
 def create_request(
@@ -83,51 +96,37 @@ def create_request(
 ):
     if user.role not in ("SALES", "SPV", "SUPERADMIN"):
         raise HTTPException(403, "Tidak memiliki akses")
-
     lkh = db.query(LKH).filter(LKH.id == data.lkh_id).first()
-
     if not lkh:
         raise HTTPException(404, "LKH tidak ditemukan")
-
     if user.role == "SALES" and lkh.sales_id != user.id:
         raise HTTPException(403, "LKH bukan tanggung jawabmu")
-
     existing = db.query(RequestPenawaran).filter(
         RequestPenawaran.lkh_id == data.lkh_id
     ).first()
-
     if existing:
         raise HTTPException(409, "LKH ini sudah memiliki request penawaran")
-
     rkh = db.query(RKH).filter(RKH.id == lkh.rkh_id).first()
-
     if not rkh:
         raise HTTPException(404, "RKH tidak ditemukan")
-
     project = db.query(ProjectProspek).filter(
         ProjectProspek.id == rkh.project_id
     ).first()
-
     if not project:
         raise HTTPException(404, "Project tidak ditemukan")
-
     status = db.query(ProjectStatus).filter(
         ProjectStatus.id == project.status_id
     ).first()
-
     status_name = status.nama.strip().casefold() if status else ""
-
     if not any(key in status_name for key in REQUEST_STATUS_KEYS):
         raise HTTPException(
             400,
             "Status project harus Request Penawaran",
         )
-
     if data.branch_id is not None:
         branch = db.query(Branch).filter(
             Branch.id == data.branch_id
         ).first()
-
         if not branch:
             raise HTTPException(404, "Branch/PT tidak ditemukan")
     if data.media_pengadaan_id is not None:
@@ -140,29 +139,37 @@ def create_request(
                 status_code=400,
                 detail="Media pengadaan tidak ditemukan",
             )
-
     request = RequestPenawaran(**data.model_dump())
-
     try:
         db.add(request)
+        db.flush()
+
+        catat_project_log(
+            db=db,
+            project_id=project.id,
+            user_id=user.id,
+            aktivitas="Request Penawaran dibuat",
+            deskripsi=(
+                f"Request Penawaran dibuat untuk project "
+                f"{project.nama_project}."
+            ),
+        )
+
         db.commit()
         db.refresh(request)
         return request
-
     except IntegrityError:
         db.rollback()
         raise HTTPException(
             status_code=409,
             detail="Data terkait tidak valid atau sudah terdaftar.",
         )
-
-    except SQLAlchemyError:
+     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(
             status_code=500,
             detail="Terjadi kesalahan saat menyimpan Request Penawaran.",
         )
-
 
 @router.get("/", response_model=list[RequestPenawaranResponse])
 def get_requests(
@@ -300,6 +307,16 @@ def create_item(
         db.add(item)
         db.flush()
 
+        project = get_project_from_request(db, request)
+        if project:
+            catat_project_log(
+                db=db,
+                project_id=project.id,
+                user_id=user.id,
+                aktivitas="Item Request Penawaran ditambahkan",
+                deskripsi=f"Item baru ditambahkan ke Request Penawaran #{request.id}.",
+            )
+
         refresh_request_completion(db, request)
         db.commit()
         db.refresh(item)
@@ -353,6 +370,20 @@ def update_item(
         setattr(item, field, value)
 
     try:
+        if updates:
+            project = get_project_from_request(db, request)
+            if project:
+                catat_project_log(
+                    db=db,
+                    project_id=project.id,
+                    user_id=user.id,
+                    aktivitas="Item Request Penawaran diperbarui",
+                    deskripsi=(
+                        f"Item #{item.id} pada Request Penawaran "
+                        f"#{request.id} diperbarui."
+                    ),
+                )
+
         refresh_request_completion(db, request)
         db.commit()
         db.refresh(item)
@@ -386,8 +417,22 @@ def delete_item(
         )
 
     try:
+        project = get_project_from_request(db, request)
+
         db.delete(item)
         db.flush()
+
+        if project:
+            catat_project_log(
+                db=db,
+                project_id=project.id,
+                user_id=user.id,
+                aktivitas="Item Request Penawaran dihapus",
+                deskripsi=(
+                    f"Item #{item.id} dihapus dari "
+                    f"Request Penawaran #{request.id}."
+                ),
+            )
 
         refresh_request_completion(db, request)
         db.commit()

@@ -44,6 +44,16 @@ class ProjectProspek(Base):
         "User",
         foreign_keys=[sales_id],
     )
+    pipeline_status = Column(
+        String(30),
+        nullable=False,
+        default="Prospek",
+        server_default="Prospek",
+    )
+    estimasi_closing = Column(
+        Date,
+        nullable=True
+    )
 
     nilai_proyek = Column(Numeric(15, 2), nullable=True)
     estimasi_closing = Column(Date, nullable=True)
