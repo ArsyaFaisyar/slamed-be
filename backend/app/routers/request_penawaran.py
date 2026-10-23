@@ -13,6 +13,7 @@ from app.models.project_status import ProjectStatus
 from app.models.branch import Branch
 from app.models.request_penawaran import RequestPenawaran
 from app.models.request_penawaran_item import RequestPenawaranItem
+from app.models.customer import Customer
 from app.schemas.request_penawaran import (
     RequestPenawaranCreate,
     RequestPenawaranUpdate,
@@ -139,7 +140,29 @@ def create_request(
                 status_code=400,
                 detail="Media pengadaan tidak ditemukan",
             )
-    request = RequestPenawaran(**data.model_dump())
+    
+    customer = db.query(Customer).filter(
+            Customer.id == project.customer_id
+        ).first()
+
+    if not customer:
+        raise HTTPException(404, "Customer tidak ditemukan")
+    
+    request_data = data.model_dump()
+
+    request_data["nama_pic"] = (
+        data.nama_pic
+        if data.nama_pic is not None
+        else customer.nama_pic
+    )
+
+    request_data["nomor_pic"] = (
+        data.nomor_pic
+        if data.nomor_pic is not None
+        else customer.kontak_pic
+    )
+
+    request = RequestPenawaran(**request_data)
     try:
         db.add(request)
         db.flush()
@@ -154,6 +177,7 @@ def create_request(
                 f"{project.nama_project}."
             ),
         )
+        
 
         db.commit()
         db.refresh(request)
