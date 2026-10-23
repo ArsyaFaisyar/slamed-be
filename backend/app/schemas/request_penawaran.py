@@ -13,6 +13,15 @@ class RequestPenawaranCreate(BaseModel):
     pajak_harga_modal: Optional[str] = None
     durasi: Optional[int] = None
 
+class RequestPenawaranUpdate(BaseModel):
+    diminta_oleh: Optional[str] = None
+    media_pengadaan_id: Optional[int] = None
+    branch_id: Optional[int] = None
+    mode_pagu: Optional[str] = None
+    pajak_harga_modal: Optional[str] = None
+    durasi: Optional[int] = None
+    total_pagu: Optional[Decimal] = None
+
 class RequestPenawaranResponse(BaseModel):
     id: int
     lkh_id: int

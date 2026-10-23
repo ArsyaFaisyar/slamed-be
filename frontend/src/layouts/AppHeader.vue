@@ -31,7 +31,7 @@ function logout() {
 
 <template>
   <header
-    class="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-line bg-page px-4 sm:px-6"
+    class="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b border-line bg-sidebar px-4 sm:px-6"
   >
     <div class="flex items-center gap-3">
       <Button

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -13,6 +14,7 @@ from app.models.request_penawaran import RequestPenawaran
 from app.models.request_penawaran_item import RequestPenawaranItem
 from app.schemas.request_penawaran import (
     RequestPenawaranCreate,
+    RequestPenawaranUpdate,
     RequestPenawaranResponse,
     RequestPenawaranItemCreate,
     RequestPenawaranItemUpdate,
@@ -25,18 +27,28 @@ router = APIRouter(
     tags=["Request Penawaran"],
 )
 
+REQUEST_STATUS_KEYS = ("request penawaran", "req penawaran", "penawaran")
+
 
 def get_request_access(db, request_id, user):
     request = db.query(RequestPenawaran).filter(
         RequestPenawaran.id == request_id
     ).first()
+
     if not request:
         raise HTTPException(404, "Request penawaran tidak ditemukan")
+
     lkh = db.query(LKH).filter(LKH.id == request.lkh_id).first()
+
+    if not lkh:
+        raise HTTPException(404, "LKH tidak ditemukan")
+
     if user.role == "SALES" and lkh.sales_id != user.id:
         raise HTTPException(403, "Tidak memiliki akses")
+
     if user.role not in ("SALES", "SPV", "SUPERADMIN"):
         raise HTTPException(403, "Tidak memiliki akses")
+
     return request
 
 
@@ -50,6 +62,7 @@ def create_request(
         raise HTTPException(403, "Tidak memiliki akses")
 
     lkh = db.query(LKH).filter(LKH.id == data.lkh_id).first()
+
     if not lkh:
         raise HTTPException(404, "LKH tidak ditemukan")
 
@@ -64,15 +77,24 @@ def create_request(
         raise HTTPException(409, "LKH ini sudah memiliki request penawaran")
 
     rkh = db.query(RKH).filter(RKH.id == lkh.rkh_id).first()
+
+    if not rkh:
+        raise HTTPException(404, "RKH tidak ditemukan")
+
     project = db.query(ProjectProspek).filter(
         ProjectProspek.id == rkh.project_id
     ).first()
+
+    if not project:
+        raise HTTPException(404, "Project tidak ditemukan")
 
     status = db.query(ProjectStatus).filter(
         ProjectStatus.id == project.status_id
     ).first()
 
-    if not status or status.nama.strip().casefold() != "request penawaran":
+    status_name = status.nama.strip().casefold() if status else ""
+
+    if not any(key in status_name for key in REQUEST_STATUS_KEYS):
         raise HTTPException(
             400,
             "Status project harus Request Penawaran",
@@ -82,28 +104,27 @@ def create_request(
         branch = db.query(Branch).filter(
             Branch.id == data.branch_id
         ).first()
+
         if not branch:
             raise HTTPException(404, "Branch/PT tidak ditemukan")
     if data.media_pengadaan_id is not None:
-        media = (
-            db.query(MediaPengadaan)
-            .filter(MediaPengadaan.id == data.media_pengadaan_id)
-            .first()
-        )
+        media = db.query(MediaPengadaan).filter(
+            MediaPengadaan.id == data.media_pengadaan_id
+        ).first()
 
-    if not media:
-        raise HTTPException(
-            status_code=400,
-            detail="Media pengadaan tidak ditemukan",
-        )
+        if not media:
+            raise HTTPException(
+                status_code=400,
+                detail="Media pengadaan tidak ditemukan",
+            )
 
     request = RequestPenawaran(**data.model_dump())
 
     try:
-    db.add(request)
-    db.commit()
-    db.refresh(request)
-    return request
+        db.add(request)
+        db.commit()
+        db.refresh(request)
+        return request
 
     except IntegrityError:
         db.rollback()
@@ -119,6 +140,32 @@ def create_request(
             detail="Terjadi kesalahan saat menyimpan Request Penawaran. Silakan coba lagi.",
         )
 
+
+@router.get("/", response_model=list[RequestPenawaranResponse])
+def get_requests(
+    lkh_id: int | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role not in ("SALES", "SPV", "SUPERADMIN"):
+        raise HTTPException(403, "Tidak memiliki akses")
+
+    query = db.query(RequestPenawaran)
+
+    if user.role == "SALES":
+        query = query.join(
+            LKH,
+            LKH.id == RequestPenawaran.lkh_id,
+        ).filter(
+            LKH.sales_id == user.id
+        )
+
+    if lkh_id is not None:
+        query = query.filter(RequestPenawaran.lkh_id == lkh_id)
+
+    return query.order_by(RequestPenawaran.id.desc()).all()
+
+
 @router.get("/{request_id}", response_model=RequestPenawaranResponse)
 def get_request(
     request_id: int,
@@ -126,6 +173,73 @@ def get_request(
     user: User = Depends(get_current_user),
 ):
     return get_request_access(db, request_id, user)
+
+
+@router.patch(
+    "/{request_id}",
+    response_model=RequestPenawaranResponse,
+)
+def update_request(
+    request_id: int,
+    data: RequestPenawaranUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    request = get_request_access(db, request_id, user)
+    updates = data.model_dump(exclude_unset=True)
+
+    if user.role == "SALES":
+        restricted = {"pajak_harga_modal", "total_pagu"}
+
+        if restricted.intersection(updates):
+            raise HTTPException(
+                403,
+                "Sales tidak dapat mengubah pajak harga modal atau total pagu",
+            )
+
+    if "mode_pagu" in updates:
+        if updates["mode_pagu"] not in ("DETAIL", "TOTAL"):
+            raise HTTPException(
+                400,
+                "Mode pagu harus DETAIL atau TOTAL",
+            )
+
+    if (
+        "media_pengadaan_id" in updates
+        and updates["media_pengadaan_id"] is not None
+    ):
+        media = db.query(MediaPengadaan).filter(
+            MediaPengadaan.id == updates["media_pengadaan_id"]
+        ).first()
+
+        if not media:
+            raise HTTPException(
+                404,
+                "Media pengadaan tidak ditemukan",
+            )
+
+    if "branch_id" in updates and updates["branch_id"] is not None:
+        branch = db.query(Branch).filter(
+            Branch.id == updates["branch_id"]
+        ).first()
+
+        if not branch:
+            raise HTTPException(
+                404,
+                "Branch/PT tidak ditemukan",
+            )
+
+    for field, value in updates.items():
+        setattr(request, field, value)
+
+    try:
+        db.commit()
+        db.refresh(request)
+        return request
+    except Exception:
+        db.rollback()
+        raise
+
 
 @router.get(
     "/{request_id}/items",
@@ -137,6 +251,7 @@ def get_items(
     user: User = Depends(get_current_user),
 ):
     get_request_access(db, request_id, user)
+
     return db.query(RequestPenawaranItem).filter(
         RequestPenawaranItem.request_penawaran_id == request_id
     ).order_by(RequestPenawaranItem.id.asc()).all()
@@ -161,24 +276,14 @@ def create_item(
     )
 
     try:
-    db.add(request)
-    db.commit()
-    db.refresh(request)
-    return request
-
-    except IntegrityError:
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        return item
+    except Exception:
         db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Data tidak dapat disimpan karena terkait dengan data lain yang tidak valid atau sudah terdaftar.",
-        )
+        raise
 
-    except SQLAlchemyError:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Terjadi kesalahan saat menyimpan Request Penawaran. Silakan coba lagi.",
-        )
 
 @router.patch(
     "/{request_id}/items/{item_id}",
@@ -205,6 +310,7 @@ def update_item(
 
     if user.role == "SALES":
         restricted = {"harga_modal", "harga_jual"}
+
         if restricted.intersection(updates):
             raise HTTPException(
                 403,
@@ -221,6 +327,8 @@ def update_item(
     except Exception:
         db.rollback()
         raise
+
+
 @router.delete("/{request_id}/items/{item_id}")
 def delete_item(
     request_id: int,
