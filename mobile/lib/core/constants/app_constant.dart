@@ -7,6 +7,19 @@ abstract final class AppConstants {
   /// Saran tipe aktivitas RKH. Backend menerima "Kunjungan"; lainnya belum diuji.
   static const tipeAktivitasSaran = ['Kunjungan', 'Follow-up', 'Presentasi', 'Demo Produk'];
 
-  /// Status prospek di LKH (skema Done/Lose dari deck). "DONE" teruji; "LOSE" belum.
   static const statusProspek = ['DONE', 'LOSE'];
+
+
+  /// Nilai field form `jenis` pada unggahan lampiran LKH (sesuai backend).
+  static const jenisFoto = 'FOTO';
+  static const jenisLampiran = 'LAMPIRAN';
+
+  /// Batas ukuran berkas menurut backend: foto 2 MB, lampiran 5 MB.
+  static const maxFotoBytes = 2 * 1024 * 1024;
+  static const maxLampiranBytes = 5 * 1024 * 1024;
+
+  /// Ekstensi lampiran yang diterima backend: PDF, Word, Excel.
+  static const ekstensiLampiran = ['pdf', 'doc', 'docx', 'xls', 'xlsx'];
+
+    static const lkhEnabled = true;
 }

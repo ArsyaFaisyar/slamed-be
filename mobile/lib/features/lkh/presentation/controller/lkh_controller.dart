@@ -17,7 +17,7 @@ class LkhController extends GetxController {
   final RkhRepository _rkhRepo;
   final LkhRepository _lkhRepo;
   final CustomerRepository _customerRepo;
-
+  
   final loading = true.obs;
   final error = RxnString();
   final rkh = <Rkh>[].obs;
@@ -53,7 +53,8 @@ class LkhController extends GetxController {
   }
 
   Future<void> openForm(Rkh r) async {
-    final ok = await Get.toNamed<bool>(
+    // Tanpa generik: Get.toNamed<bool> memicu cast GetPageRoute -> Route<bool?> yang gagal.
+    final ok = await Get.toNamed(
       AppRoutes.lkhForm,
       arguments: LkhFormArgs(r, customerName(r.customerId)),
     );

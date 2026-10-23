@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -106,6 +107,16 @@ def create_request(
 
         if not branch:
             raise HTTPException(404, "Branch/PT tidak ditemukan")
+    if data.media_pengadaan_id is not None:
+        media = db.query(MediaPengadaan).filter(
+            MediaPengadaan.id == data.media_pengadaan_id
+        ).first()
+
+        if not media:
+            raise HTTPException(
+                status_code=400,
+                detail="Media pengadaan tidak ditemukan",
+            )
 
     request = RequestPenawaran(**data.model_dump())
 
@@ -114,9 +125,20 @@ def create_request(
         db.commit()
         db.refresh(request)
         return request
-    except Exception:
+
+    except IntegrityError:
         db.rollback()
-        raise
+        raise HTTPException(
+            status_code=409,
+            detail="Data tidak dapat disimpan karena terkait dengan data lain yang tidak valid atau sudah terdaftar.",
+        )
+
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Terjadi kesalahan saat menyimpan Request Penawaran. Silakan coba lagi.",
+        )
 
 
 @router.get("/", response_model=list[RequestPenawaranResponse])
@@ -305,3 +327,42 @@ def update_item(
     except Exception:
         db.rollback()
         raise
+
+
+@router.delete("/{request_id}/items/{item_id}")
+def delete_item(
+    request_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # Pastikan request ada dan user punya akses
+    get_request_access(db, request_id, user)
+
+    item = (
+        db.query(RequestPenawaranItem)
+        .filter(
+            RequestPenawaranItem.id == item_id,
+            RequestPenawaranItem.request_penawaran_id == request_id,
+        )
+        .first()
+    )
+
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail="Item tidak ditemukan dalam Request Penawaran ini.",
+        )
+
+    try:
+        db.delete(item)
+        db.commit()
+
+        return {"message": "Item berhasil dihapus."}
+
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Terjadi kesalahan saat menghapus item. Silakan coba lagi.",
+        )

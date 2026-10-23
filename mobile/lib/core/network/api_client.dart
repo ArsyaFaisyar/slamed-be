@@ -44,17 +44,54 @@ class ApiClient {
   }
 
   /// Upload multipart. Jangan set Content-Type manual (boundary diatur otomatis).
-  Future<dynamic> upload(String path, String filePath, {String field = 'file'}) async {
+  /// [fields] adalah field form tambahan (mis. `jenis` untuk lampiran LKH).
+  Future<dynamic> upload(
+    String path,
+    String filePath, {
+    String field = 'file',
+    Map<String, String>? fields,
+  }) async {
     final req = http.MultipartRequest('POST', _uri(path))
       ..files.add(await http.MultipartFile.fromPath(field, filePath));
+    if (fields != null) req.fields.addAll(fields);
     await _prepare(req.headers, true);
-    return _send(req, true);
+    return _send(req, true, timeout: const Duration(seconds: 60));
   }
 
-  Future<dynamic> _send(http.BaseRequest req, bool auth) async {
+    Future<dynamic> uploadForm(
+    String path, {
+    required Map<String, String> fields,
+    required Map<String, String> files,
+  }) async {
+    final req = http.MultipartRequest('POST', _uri(path))
+      ..fields.addAll(fields);
+
+    for (final entry in files.entries) {
+      req.files.add(
+        await http.MultipartFile.fromPath(
+          entry.key,
+          entry.value,
+        ),
+      );
+    }
+
+    await _prepare(req.headers, true);
+
+    return _send(
+      req,
+      true,
+      timeout: const Duration(seconds: 60),
+    );
+  }
+
+  Future<dynamic> _send(
+    http.BaseRequest req,
+    bool auth, {
+    Duration timeout = const Duration(seconds: 20),
+  }) async {
     http.Response res;
     try {
-      final streamed = await req.send().timeout(const Duration(seconds: 20));
+      final streamed = await req.send().timeout(timeout);
       res = await http.Response.fromStream(streamed);
     } on TimeoutException {
       throw ApiException(0, 'Server tidak merespons. Coba lagi.${kDebugMode ? '\n(${req.url})' : ''}');
