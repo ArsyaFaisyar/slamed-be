@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -11,7 +12,7 @@ import ProjectFormDialog, {
 } from '../components/ProjectPage/ProjectFormDialog.vue'
 
 import { deleteProject, getProjects, type Project } from '../api/projects'
-import { getCustomers, type Customer } from '../api/customers'
+import { getCustomers, isCustomerApproved, type Customer } from '../api/customers'
 import { getUsers, type User } from '../api/users'
 import type { UserRole } from '../constant/roles'
 import { useAuthStore } from '../stores/auth'
@@ -19,6 +20,9 @@ import { getErrorMessage } from '../utils/error'
 import { parseDateString } from '../utils/date'
 
 const confirm = useConfirm()
+const router = useRouter()
+
+const projectDetailPath = (id: number) => `/transaksi/project/${id}`
 
 const SALES_ROLE: UserRole = 'SALES'
 const MANAGER_ROLES: UserRole[] = ['SUPERADMIN', 'SPV']
@@ -44,8 +48,11 @@ const rupiahFormat = new Intl.NumberFormat('id-ID', {
   maximumFractionDigits: 0,
 })
 
+// Hanya customer yang sudah disetujui yang bisa dipilih di form project.
 const customerOptions = computed<CustomerOption[]>(() =>
-  customers.value.map((customer) => ({ value: customer.id, label: customer.nama_instansi })),
+  customers.value
+    .filter(isCustomerApproved)
+    .map((customer) => ({ value: customer.id, label: customer.nama_instansi })),
 )
 
 const customerNames = computed(
@@ -123,6 +130,10 @@ function openCreate() {
 function openEdit(project: Project) {
   selectedEdit.value = project
   formVisible.value = true
+}
+
+function openDetail(project: Project) {
+  router.push(projectDetailPath(project.id))
 }
 
 async function fetchProjects() {
@@ -271,7 +282,7 @@ onMounted(() => {
               <th class="px-5 py-3 font-medium">Estimasi closing</th>
               <th class="px-5 py-3 font-medium">Status</th>
               <th class="px-5 py-3 font-medium">Dibuat</th>
-              <th v-if="canManage" class="px-5 py-3 text-center font-medium">Aksi</th>
+              <th class="px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
           </thead>
 
@@ -317,27 +328,39 @@ onMounted(() => {
 
               <td class="px-5 py-4 text-fg-muted">{{ formatDate(project.created_at) }}</td>
 
-              <td v-if="canManage" class="px-5 py-4 text-center">
+              <td class="px-5 py-4 text-center">
                 <div class="flex items-center justify-center gap-1">
                   <Button
-                    icon="pi pi-pencil"
+                    icon="pi pi-eye"
                     variant="text"
                     rounded
                     severity="secondary"
-                    aria-label="Edit project"
-                    v-tooltip.top="'Edit project'"
-                    @click="openEdit(project)"
+                    aria-label="Lihat detail project"
+                    v-tooltip.top="'Lihat detail'"
+                    @click="openDetail(project)"
                   />
 
-                  <Button
-                    icon="pi pi-trash"
-                    variant="text"
-                    rounded
-                    severity="danger"
-                    aria-label="Hapus project"
-                    v-tooltip.top="'Hapus project'"
-                    @click="confirmDelete(project)"
-                  />
+                  <template v-if="canManage">
+                    <Button
+                      icon="pi pi-pencil"
+                      variant="text"
+                      rounded
+                      severity="secondary"
+                      aria-label="Edit project"
+                      v-tooltip.top="'Edit project'"
+                      @click="openEdit(project)"
+                    />
+
+                    <Button
+                      icon="pi pi-trash"
+                      variant="text"
+                      rounded
+                      severity="danger"
+                      aria-label="Hapus project"
+                      v-tooltip.top="'Hapus project'"
+                      @click="confirmDelete(project)"
+                    />
+                  </template>
                 </div>
               </td>
             </tr>

@@ -21,9 +21,9 @@ def validate_spv(db: Session, spv_id: int):
 
 @router.get("/", response_model=list[AreaResponse])
 def get_areas(
-    db: Session = Depends(get_db),
-    current_user=Depends(require_roles("SUPERADMIN", "SPV")),
-):
+       db: Session = Depends(get_db),
+       current_user=Depends(get_current_user),
+   ):
     return db.query(Area).order_by(Area.id.desc()).all()
 
 

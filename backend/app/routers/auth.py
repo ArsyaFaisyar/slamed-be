@@ -30,6 +30,7 @@ def login(
         data.captcha_id,
         data.captcha_answer,
     )
+
     user = db.query(User).filter(
         (User.username == data.username)
         | (User.email == data.username)
@@ -56,19 +57,22 @@ def login(
     )
 
     return {
-    "access_token": token,
-    "token_type": "bearer",
-    "message": "Login berhasil",
-    "user": {
-        "id": user.id,
-        "nama": user.nama,
-        "username": user.username,
-        "email": user.email,
-        "role": user.role,
-        "foto_profil": user.foto_profil,
-    },
-}
+        "access_token": token,
+        "token_type": "bearer",
+        "message": "Login berhasil",
+        "user": {
+            "id": user.id,
+            "nama": user.nama,
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+            "foto_profil": user.foto_profil,
+            "branch_id": user.branch_id,
+            "area_id": user.area_id,
+        },
+    }
+
+
 @router.get("/captcha")
 def get_captcha():
     return create_captcha()
-

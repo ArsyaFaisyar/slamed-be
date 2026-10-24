@@ -9,6 +9,7 @@ const rolePermissions: Record<string, AppRole[]> = {
 
   "/transaksi/customer": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES"],
   "/transaksi/project": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES", "PPIC", "PAJAK", "PURCHASING"],
+  "/transaksi/customer-approval": ["SUPERADMIN", "SPV"],
 
   "/aktivitas/rkh": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES"],
   "/aktivitas/lkh": ["SUPERADMIN", "DIREKTUR", "MANAJER", "SPV", "SALES"],

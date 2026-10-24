@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import InputText from 'primevue/inputtext'
+import Select from 'primevue/select'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
@@ -9,7 +10,13 @@ import CustomerFormDialog, {
   type SalesOption,
 } from '../components/CustomerPage/CustomerFormDialog.vue'
 
-import { deleteCustomer, getCustomers, type Customer } from '../api/customers'
+import {
+  APPROVAL_LABELS,
+  deleteCustomer,
+  getCustomers,
+  type ApprovalStatus,
+  type Customer,
+} from '../api/customers'
 import { getUsers, type User } from '../api/users'
 import { getAreas, type Area } from '../api/areas'
 import { getErrorMessage } from '../utils/error'
@@ -24,11 +31,14 @@ const users = ref<User[]>([])
 const areas = ref<Area[]>([])
 
 const search = ref('')
+const statusFilter = ref<ApprovalStatus | null>(null)
 const loading = ref(false)
 const errorMessage = ref('')
 const actionError = ref('')
 const formVisible = ref(false)
 const selectedEdit = ref<Customer | null>(null)
+
+const isSales = computed(() => auth.user?.role === 'SALES')
 
 const canManage = computed(() =>
   (['SUPERADMIN', 'SPV'] as UserRole[]).includes(
@@ -36,16 +46,47 @@ const canManage = computed(() =>
   ),
 )
 
-const salesOptions = computed<SalesOption[]>(() =>
-  users.value
+// Sales boleh mengajukan customer baru (menunggu persetujuan SPV).
+const canCreate = computed(() => canManage.value || isSales.value)
+
+const statusOptions = (Object.keys(APPROVAL_LABELS) as ApprovalStatus[]).map((status) => ({
+  value: status,
+  label: APPROVAL_LABELS[status],
+}))
+
+const statusClasses: Record<ApprovalStatus, string> = {
+  PENDING: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  APPROVED: 'bg-green-500/10 text-green-700 dark:text-green-400',
+  REJECTED: 'bg-red-500/10 text-red-700 dark:text-red-400',
+}
+
+// Sales hanya bisa memilih dirinya sendiri; role lain memilih dari daftar user.
+const salesOptions = computed<SalesOption[]>(() => {
+  if (isSales.value) {
+    const currentUser = auth.user as {
+      id: number
+      nama: string
+      area_id?: number | null
+    } | null
+    if (!currentUser) return []
+
+    return [
+      {
+        value: currentUser.id,
+        label: currentUser.nama,
+        areaId: currentUser.area_id ?? null,
+      },
+    ]
+  }
+
+  return users.value
     .filter((user) => user.role === 'SALES')
-    .map((user) => ({
+    .map((user): SalesOption => ({
       value: user.id,
       label: user.is_active ? user.nama : `${user.nama} (nonaktif)`,
       areaId: user.area_id ?? null,
-    })),
-)
-
+    }))
+})
 
 function salesName(customer: Customer) {
   return customer.sales_nama ?? '-'
@@ -58,10 +99,11 @@ function areaName(customer: Customer) {
 const filteredCustomers = computed(() => {
   const keyword = search.value.trim().toLowerCase()
 
-  if (!keyword) return customers.value
+  return customers.value.filter((customer) => {
+    if (statusFilter.value && customer.approval_status !== statusFilter.value) return false
+    if (!keyword) return true
 
-  return customers.value.filter((customer) =>
-    [
+    return [
       customer.nama_instansi,
       customer.nama_pic,
       customer.kontak_pic,
@@ -72,8 +114,8 @@ const filteredCustomers = computed(() => {
       salesName(customer),
     ].some((value) =>
       String(value ?? '').toLowerCase().includes(keyword),
-    ),
-  )
+    )
+  })
 })
 
 async function fetchCustomers() {
@@ -153,7 +195,8 @@ function confirmDelete(customer: Customer) {
 
 onMounted(() => {
   fetchCustomers()
-  fetchUsers()
+  // Sales tidak perlu daftar user (opsi sales diambil dari akunnya sendiri).
+  if (!isSales.value) fetchUsers()
   fetchAreas()
 })
 </script>
@@ -189,7 +232,19 @@ onMounted(() => {
           </p>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <Select
+            v-model="statusFilter"
+            :options="statusOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua status"
+            show-clear
+            size="small"
+            class="w-40"
+            aria-label="Filter status approval"
+          />
+
           <InputText
             v-model="search"
             placeholder="Cari customer..."
@@ -199,8 +254,8 @@ onMounted(() => {
           />
 
           <Button
-            v-if="canManage"
-            label="Tambah customer"
+            v-if="canCreate"
+            :label="isSales ? 'Ajukan customer' : 'Tambah customer'"
             icon="pi pi-plus"
             size="small"
             class="whitespace-nowrap"
@@ -223,10 +278,10 @@ onMounted(() => {
       >
         <i class="pi pi-users text-3xl text-fg-muted"></i>
         <p class="font-medium">
-          {{ search ? 'Customer tidak ditemukan' : 'Belum ada customer' }}
+          {{ search || statusFilter ? 'Customer tidak ditemukan' : 'Belum ada customer' }}
         </p>
         <p class="text-sm text-fg-muted">
-          {{ search ? 'Coba kata kunci lain.' : 'Data customer akan muncul di sini.' }}
+          {{ search || statusFilter ? 'Coba kata kunci atau filter lain.' : 'Data customer akan muncul di sini.' }}
         </p>
       </div>
 
@@ -236,7 +291,7 @@ onMounted(() => {
         :class="loading && 'pointer-events-none opacity-60'"
         :aria-busy="loading"
       >
-        <table class="w-full min-w-[1000px] text-left text-sm">
+        <table class="w-full min-w-[1100px] text-left text-sm">
           <thead class="bg-sidebar text-fg-muted">
             <tr>
               <th class="px-5 py-3 font-medium">Instansi</th>
@@ -244,8 +299,9 @@ onMounted(() => {
               <th class="px-5 py-3 font-medium">Kategori</th>
               <th class="px-5 py-3 font-medium">Area</th>
               <th class="px-5 py-3 font-medium">Sales</th>
+              <th class="px-5 py-3 font-medium">Status</th>
               <th
-                v-if="canManage"
+                v-if="canManage || isSales"
                 class="px-5 py-3 text-center font-medium"
               >
                 Aksi
@@ -279,26 +335,75 @@ onMounted(() => {
               </td>
               <td class="px-5 py-4 text-fg-muted">{{ salesName(customer) }}</td>
 
-              <td v-if="canManage" class="px-5 py-4 text-center">
+              <td class="max-w-[240px] px-5 py-4">
+                <span
+                  v-if="customer.approval_status"
+                  class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium"
+                  :class="statusClasses[customer.approval_status]"
+                >
+                  {{ APPROVAL_LABELS[customer.approval_status] }}
+                </span>
+                <span v-else class="text-fg-muted">-</span>
+
+                <p
+                  v-if="customer.approval_status === 'REJECTED' && customer.rejection_reason"
+                  class="mt-1 line-clamp-2 text-xs text-fg-muted"
+                  :title="customer.rejection_reason"
+                >
+                  Alasan: {{ customer.rejection_reason }}
+                </p>
+              </td>
+
+              <td v-if="canManage || isSales" class="px-5 py-4 text-center">
                 <div class="flex items-center justify-center gap-1">
-                  <Button
-                    icon="pi pi-pencil"
-                    variant="text"
-                    rounded
-                    severity="secondary"
-                    aria-label="Edit customer"
-                    v-tooltip.top="'Edit customer'"
-                    @click="openEdit(customer)"
-                  />
-                  <Button
-                    icon="pi pi-trash"
-                    variant="text"
-                    rounded
-                    severity="danger"
-                    aria-label="Hapus customer"
-                    v-tooltip.top="'Hapus customer'"
-                    @click="confirmDelete(customer)"
-                  />
+                  <template v-if="canManage">
+                    <Button
+                      icon="pi pi-pencil"
+                      variant="text"
+                      rounded
+                      severity="secondary"
+                      aria-label="Edit customer"
+                      v-tooltip.top="'Edit customer'"
+                      @click="openEdit(customer)"
+                    />
+                    <Button
+                      icon="pi pi-trash"
+                      variant="text"
+                      rounded
+                      severity="danger"
+                      aria-label="Hapus customer"
+                      v-tooltip.top="'Hapus customer'"
+                      @click="confirmDelete(customer)"
+                    />
+                  </template>
+
+                  <!-- Sales: boleh edit selama belum disetujui; menyimpan = diajukan ulang -->
+                  <template v-else>
+                    <Button
+                      v-if="customer.approval_status !== 'APPROVED'"
+                      icon="pi pi-pencil"
+                      variant="text"
+                      rounded
+                      severity="secondary"
+                      aria-label="Edit dan ajukan ulang"
+                      v-tooltip.top="'Edit dan ajukan ulang'"
+                      @click="openEdit(customer)"
+                    />
+                    <span
+                      v-else
+                      v-tooltip.top="'Customer yang sudah disetujui tidak bisa diedit'"
+                      class="inline-flex"
+                    >
+                      <Button
+                        icon="pi pi-lock"
+                        variant="text"
+                        rounded
+                        severity="secondary"
+                        aria-label="Customer sudah disetujui"
+                        disabled
+                      />
+                    </span>
+                  </template>
                 </div>
               </td>
             </tr>
@@ -315,6 +420,7 @@ onMounted(() => {
       v-model:visible="formVisible"
       :customer="selectedEdit"
       :sales-options="salesOptions"
+      :lock-sales="isSales"
       @saved="fetchCustomers"
     />
   </div>
