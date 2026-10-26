@@ -23,6 +23,7 @@ class ProjectProspekUpdate(BaseModel):
     nilai_proyek: Decimal | None = None
     estimasi_closing: date | None = None
     sales_id: int | None = None
+    pipeline_status: str | None = None
 
 
 class ProjectStatusResponse(BaseModel):
@@ -53,6 +54,7 @@ class ProjectProspekResponse(BaseModel):
     sales_id: int
     sales_rel: ProjectSalesResponse | None = None
 
+    pipeline_status: str
     nilai_proyek: Decimal | None = None
     estimasi_closing: date | None = None
     created_at: datetime | None = None
