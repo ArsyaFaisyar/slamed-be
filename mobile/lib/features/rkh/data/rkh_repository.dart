@@ -2,6 +2,7 @@ import 'package:slamed_app/core/network/api_client.dart';
 import 'package:slamed_app/core/network/json_list.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh_create.dart';
+import 'package:slamed_app/features/rkh/data/models/rkh_update.dart';
 
 class RkhRepository {
   RkhRepository(this._api);
@@ -17,4 +18,11 @@ class RkhRepository {
 
   Future<Rkh> create(RkhCreate body) async =>
       Rkh.fromJson(Map<String, dynamic>.from(await _api.request('POST', '/rkh/', body: body.toJson())));
+
+  Future<Rkh> update(int id, RkhUpdate body) async =>
+      Rkh.fromJson(Map<String, dynamic>.from(await _api.request('PATCH', '/rkh/$id', body: body.toJson())));
+
+  Future<void> delete(int id) async {
+    await _api.request('DELETE', '/rkh/$id');
+  }
 }
