@@ -11,7 +11,13 @@ import ProjectFormDialog, {
   type SalesOption,
 } from '../components/ProjectPage/ProjectFormDialog.vue'
 
-import { deleteProject, getProjects, type Project } from '../api/projects'
+import {
+  deleteProject,
+  getProjectDashboardSummary,
+  getProjects,
+  type Project,
+  type ProjectDashboardSummary,
+} from '../api/projects'
 import { getCustomers, isCustomerApproved, type Customer } from '../api/customers'
 import { getUsers, type User } from '../api/users'
 import type { UserRole } from '../constant/roles'
@@ -37,6 +43,10 @@ const search = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 const actionError = ref('')
+
+const summary = ref<ProjectDashboardSummary | null>(null)
+const summaryLoading = ref(false)
+const summaryError = ref(false)
 
 const formVisible = ref(false)
 const selectedEdit = ref<Project | null>(null)
@@ -110,13 +120,74 @@ function formatRupiah(value: string | null) {
   return Number.isNaN(amount) ? '-' : rupiahFormat.format(amount)
 }
 
+const numberFormat = new Intl.NumberFormat('id-ID')
+
+const summaryCards = computed(() => {
+  const data = summary.value
+
+  return [
+    {
+      key: 'project',
+      label: 'Jumlah project',
+      icon: 'pi pi-briefcase',
+      value: data ? numberFormat.format(data.jumlah_project) : '-',
+      hint: data ? `Total nilai ${formatRupiah(data.total_nilai_project)}` : '',
+    },
+    {
+      key: 'prospek',
+      label: 'Prospek',
+      icon: 'pi pi-chart-line',
+      value: data ? numberFormat.format(data.jumlah_prospek) : '-',
+      hint: data ? `Nilai ${formatRupiah(data.nilai_prospek)}` : '',
+    },
+    {
+      key: 'hot',
+      label: 'Hot prospek',
+      icon: 'pi pi-bolt',
+      value: data ? numberFormat.format(data.jumlah_hot_prospek) : '-',
+      hint: data ? `Nilai ${formatRupiah(data.nilai_hot_prospek)}` : '',
+    },
+  ]
+})
+
+// Nilai pipeline_status dari backend: "Prospek" dan "Hot Prospek".
+const PIPELINE_CLASSES: Record<string, string> = {
+  Prospek: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
+  'Hot Prospek': 'bg-red-500/10 text-red-700 dark:text-red-400',
+}
+
+function pipelineClass(value: string | null) {
+  return PIPELINE_CLASSES[value ?? ''] ?? 'bg-sidebar'
+}
+
+async function fetchSummary() {
+  summaryLoading.value = true
+  summaryError.value = false
+
+  try {
+    summary.value = await getProjectDashboardSummary()
+  } catch {
+    summary.value = null
+    summaryError.value = true
+  } finally {
+    summaryLoading.value = false
+  }
+}
+
 const filteredProjects = computed(() => {
   const keyword = search.value.trim().toLowerCase()
 
   if (!keyword) return projects.value
 
   return projects.value.filter((project) =>
-    [project.nama_project, statusName(project), project.deskripsi, customerName(project), salesName(project)].some(
+    [
+      project.nama_project,
+      statusName(project),
+      project.pipeline_status,
+      project.deskripsi,
+      customerName(project),
+      salesName(project),
+    ].some(
       (value) => String(value ?? '').toLowerCase().includes(keyword),
     ),
   )
@@ -139,6 +210,7 @@ function openDetail(project: Project) {
 async function fetchProjects() {
   loading.value = true
   errorMessage.value = ''
+  void fetchSummary()
 
   try {
     projects.value = await getProjects()
@@ -216,6 +288,30 @@ onMounted(() => {
 
     <Message v-if="actionError" severity="error" @close="actionError = ''">{{ actionError }}</Message>
 
+    <!-- Ringkasan di atas tabel -->
+    <Message v-if="summaryError" severity="warn" :closable="false">
+      <div class="flex flex-wrap items-center gap-3">
+        <span>Ringkasan project gagal dimuat.</span>
+        <Button label="Coba lagi" size="small" variant="text" :loading="summaryLoading" @click="fetchSummary" />
+      </div>
+    </Message>
+
+    <div
+      v-else
+      class="grid gap-4 transition-opacity sm:grid-cols-3"
+      :class="summaryLoading && 'opacity-60'"
+      :aria-busy="summaryLoading"
+    >
+      <div v-for="card in summaryCards" :key="card.key" class="rounded-xl border border-line bg-card p-5">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm text-fg-muted">{{ card.label }}</p>
+          <i :class="card.icon" class="text-fg-muted" />
+        </div>
+        <p class="mt-2 text-2xl font-semibold tabular-nums">{{ card.value }}</p>
+        <p class="mt-1 text-xs text-fg-muted tabular-nums">{{ card.hint || '\u00A0' }}</p>
+      </div>
+    </div>
+
     <section class="rounded-xl border border-line bg-card">
       <div
         class="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -281,6 +377,7 @@ onMounted(() => {
               <th class="px-5 py-3 text-right font-medium">Nilai proyek</th>
               <th class="px-5 py-3 font-medium">Estimasi closing</th>
               <th class="px-5 py-3 font-medium">Status</th>
+              <th class="px-5 py-3 font-medium">Pipeline</th>
               <th class="px-5 py-3 font-medium">Dibuat</th>
               <th class="px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
@@ -322,6 +419,18 @@ onMounted(() => {
                   "
                 >
                   {{ statusName(project) }}
+                </span>
+                <span v-else class="text-fg-muted">-</span>
+              </td>
+
+              <td class="px-5 py-4">
+                <span
+                  v-if="project.pipeline_status"
+                  class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium"
+                  :class="pipelineClass(project.pipeline_status)"
+                >
+                  <i v-if="project.pipeline_status === 'Hot Prospek'" class=" mr-1 text-[0.7rem]" />
+                  {{ project.pipeline_status }}
                 </span>
                 <span v-else class="text-fg-muted">-</span>
               </td>

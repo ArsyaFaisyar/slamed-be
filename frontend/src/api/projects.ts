@@ -15,6 +15,7 @@ export interface Project {
   status_rel?: ProjectStatus | null;
   sales_id: number;
   sales_rel?: ProjectSales | null;
+  pipeline_status: string | null;
   nilai_proyek: string | null;
   estimasi_closing: string | null;
   created_at: string;
@@ -32,8 +33,22 @@ export interface ProjectInput {
 
 export type ProjectUpdate = Partial<ProjectInput>;
 
+export interface ProjectDashboardSummary {
+  jumlah_project: number;
+  total_nilai_project: string | null;
+  jumlah_prospek: number;
+  jumlah_hot_prospek: number;
+  nilai_prospek: string | null;
+  nilai_hot_prospek: string | null;
+}
+
 export async function getProjects(): Promise<Project[]> {
   const { data } = await http.get<Project[]>("/projects/");
+  return data;
+}
+
+export async function getProjectDashboardSummary(): Promise<ProjectDashboardSummary> {
+  const { data } = await http.get<ProjectDashboardSummary>("/projects/dashboard/summary");
   return data;
 }
 
