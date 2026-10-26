@@ -1,7 +1,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session, joinedload
-
+from sqlalchemy import func, case
 from app.db.database import get_db
 from app.models.customer import Customer
 from app.models.project_prospek import ProjectProspek
@@ -13,6 +13,7 @@ from app.schemas.project_prospek import (
     ProjectProspekUpdate,
     ProjectProspekResponse,
 )
+from app.schemas.project_dashboard import ProjectDashboardSummary
 from app.core.dependencies import get_current_user, require_roles
 from app.utils.project_log import catat_project_log
 from app.core.roles import PROJECT_VIEW_ROLES
@@ -54,6 +55,81 @@ def get_projects(
 
     return query.order_by(ProjectProspek.id.desc()).all()
 
+@router.get(
+    "/dashboard/summary",
+    response_model=ProjectDashboardSummary,
+)
+def get_project_dashboard_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(ProjectProspek)
+
+    if current_user.role == "SALES":
+        query = query.filter(
+            ProjectProspek.sales_id == current_user.id
+        )
+    elif current_user.role not in PROJECT_VIEW_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Kamu tidak memiliki akses ke data proyek",
+        )
+
+    result = query.with_entities(
+        func.count(ProjectProspek.id).label("jumlah_project"),
+        func.coalesce(
+            func.sum(ProjectProspek.nilai_proyek), 0
+        ).label("total_nilai_project"),
+
+        func.sum(
+            case(
+                (ProjectProspek.pipeline_status == "Prospek", 1),
+                else_=0,
+            )
+        ).label("jumlah_prospek"),
+
+        func.sum(
+            case(
+                (ProjectProspek.pipeline_status == "Hot Prospek", 1),
+                else_=0,
+            )
+        ).label("jumlah_hot_prospek"),
+
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        ProjectProspek.pipeline_status == "Prospek",
+                        ProjectProspek.nilai_proyek,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("nilai_prospek"),
+
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        ProjectProspek.pipeline_status == "Hot Prospek",
+                        ProjectProspek.nilai_proyek,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("nilai_hot_prospek"),
+    ).one()
+
+    return {
+        "jumlah_project": result.jumlah_project,
+        "total_nilai_project": result.total_nilai_project,
+        "jumlah_prospek": result.jumlah_prospek or 0,
+        "jumlah_hot_prospek": result.jumlah_hot_prospek or 0,
+        "nilai_prospek": result.nilai_prospek,
+        "nilai_hot_prospek": result.nilai_hot_prospek,
+    }
 
 @router.get("/{project_id}", response_model=ProjectProspekResponse)
 def get_project(
@@ -176,6 +252,12 @@ def update_project(
         )
 
     updates = data.model_dump(exclude_unset=True)
+    if "pipeline_status" in updates:
+        if updates["pipeline_status"] not in ("Prospek", "Hot Prospek"):
+            raise HTTPException(
+                status_code=400,
+                detail="Pipeline status harus Prospek atau Hot Prospek",
+            )
     old_status_id = project.status_id
     if "customer_id" in updates:
         customer = db.query(Customer).filter(

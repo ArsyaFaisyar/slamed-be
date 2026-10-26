@@ -56,7 +56,6 @@ class ProjectProspek(Base):
     )
 
     nilai_proyek = Column(Numeric(15, 2), nullable=True)
-    estimasi_closing = Column(Date, nullable=True)
 
     created_at = Column(
         DateTime(timezone=True),
