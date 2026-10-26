@@ -10,16 +10,19 @@ import 'package:slamed_app/features/home/presentation/controller/home_controller
 import 'package:slamed_app/features/home/presentation/page/home_shell.dart';
 import 'package:slamed_app/features/lkh/data/lkh_repository.dart';
 import 'package:slamed_app/features/lkh/presentation/controller/lkh_controller.dart';
+import 'package:slamed_app/features/lkh/presentation/controller/lkh_detail_controller.dart';
 import 'package:slamed_app/features/lkh/presentation/controller/lkh_form_controller.dart';
+import 'package:slamed_app/features/lkh/presentation/pages/lkh_detail_page.dart';
 import 'package:slamed_app/features/lkh/presentation/pages/lkh_form_page.dart';
 import 'package:slamed_app/features/profile/presentation/pages/profile_page.dart';
 import 'package:slamed_app/features/project/data/project_repository.dart';
+import 'package:slamed_app/features/project/presentation/controllers/prospect_controller.dart';
 import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
 import 'package:slamed_app/features/rkh/presentation/controllers/rkh_controller.dart';
+import 'package:slamed_app/features/rkh/presentation/controllers/rkh_detail_controller.dart';
 import 'package:slamed_app/features/rkh/presentation/controllers/rkh_form_controller.dart';
+import 'package:slamed_app/features/rkh/presentation/pages/rkh_detail_page.dart';
 import 'package:slamed_app/features/rkh/presentation/pages/rkh_form_page.dart';
-import 'package:slamed_app/features/project/presentation/controllers/prospect_controller.dart';
-
 
 abstract final class AppPages {
   static final pages = <GetPage<dynamic>>[
@@ -63,10 +66,22 @@ abstract final class AppPages {
       ),
     ),
     GetPage(
+      name: AppRoutes.rkhDetail,
+      page: () => const RkhDetailPage(),
+      middlewares: [AuthMiddleware()],
+      binding: BindingsBuilder(() => Get.lazyPut(() => RkhDetailController(Get.find<RkhRepository>()))),
+    ),
+    GetPage(
       name: AppRoutes.lkhForm,
       page: () => const LkhFormPage(),
       middlewares: [AuthMiddleware()],
       binding: BindingsBuilder(() => Get.lazyPut(() => LkhFormController(Get.find<LkhRepository>()))),
+    ),
+    GetPage(
+      name: AppRoutes.lkhDetail,
+      page: () => const LkhDetailPage(),
+      middlewares: [AuthMiddleware()],
+      binding: BindingsBuilder(() => Get.lazyPut(() => LkhDetailController(Get.find<LkhRepository>()))),
     ),
   ];
 }

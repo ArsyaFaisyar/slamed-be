@@ -7,6 +7,7 @@ import 'package:slamed_app/features/customer/data/customer_repository.dart';
 import 'package:slamed_app/features/customer/data/models/customer.dart';
 import 'package:slamed_app/features/lkh/data/lkh_repository.dart';
 import 'package:slamed_app/features/lkh/data/models/lkh.dart';
+import 'package:slamed_app/features/lkh/presentation/controller/lkh_detail_controller.dart';
 import 'package:slamed_app/features/lkh/presentation/controller/lkh_form_controller.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh.dart';
 import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
@@ -17,7 +18,7 @@ class LkhController extends GetxController {
   final RkhRepository _rkhRepo;
   final LkhRepository _lkhRepo;
   final CustomerRepository _customerRepo;
-  
+
   final loading = true.obs;
   final error = RxnString();
   final rkh = <Rkh>[].obs;
@@ -32,6 +33,13 @@ class LkhController extends GetxController {
   }
 
   String customerName(int id) => customers[id]?.namaInstansi ?? 'Customer #$id';
+
+  Rkh? _rkhOf(int id) {
+    for (final r in rkh) {
+      if (r.id == id) return r;
+    }
+    return null;
+  }
 
   Future<void> load() async {
     final salesId = _auth.role == Roles.sales ? _auth.user.value!.id : null;
@@ -59,5 +67,19 @@ class LkhController extends GetxController {
       arguments: LkhFormArgs(r, customerName(r.customerId)),
     );
     if (ok == true) load();
+  }
+
+  /// Buka detail; daftar dimuat ulang setelah kembali (data bisa berubah/terhapus).
+  Future<void> openDetail(Lkh l) async {
+    final r = _rkhOf(l.rkhId);
+    await Get.toNamed(
+      AppRoutes.lkhDetail,
+      arguments: LkhDetailArgs(
+        l,
+        r?.judulKegiatan ?? 'RKH #${l.rkhId}',
+        r == null ? '-' : customerName(r.customerId),
+      ),
+    );
+    load();
   }
 }

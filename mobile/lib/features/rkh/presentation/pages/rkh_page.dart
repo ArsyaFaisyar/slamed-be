@@ -53,6 +53,7 @@ class RkhPage extends GetView<RkhController> {
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: AppCard(
+                      onTap: () => c.openDetail(r),
                       accent: c.withLkh.contains(r.id) ? AppColors.successFg : AppColors.warningFg,
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
