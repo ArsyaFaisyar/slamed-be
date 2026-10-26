@@ -6,7 +6,7 @@ import 'package:slamed_app/features/profile/presentation/controllers/profile_con
 import 'package:slamed_app/shared/helpers/confirm.dart';
 import 'package:slamed_app/shared/widgets/app_card.dart';
 import 'package:slamed_app/shared/widgets/app_scaffold.dart';
-import 'package:slamed_app/shared/widgets/change_password_sheet.dart';
+import 'package:slamed_app/features/profile/presentation/widgets/change_password_sheet.dart';
 import 'package:slamed_app/shared/widgets/fade_slide_in.dart';
 import 'package:slamed_app/shared/widgets/section_title.dart';
 import 'package:slamed_app/shared/widgets/status_chip.dart';
