@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:slamed_app/core/constants/app_constant.dart';
 import 'package:slamed_app/core/network/api_exception.dart';
+import 'package:slamed_app/core/utils/currency_format.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh_update.dart';
 import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
@@ -60,7 +61,7 @@ class RkhDetailController extends GetxController {
     judul.text = r.judulKegiatan;
     rencana.text = r.rencanaKegiatan;
     tipe.text = r.tipeAktivitas;
-    biaya.text = (double.tryParse(r.estimasiBiayaHarian) ?? 0).round().toString();
+    biaya.text = rupiahInputText(r.estimasiBiayaHarian); // "150000.00" -> "150.000"
     tanggal.value = r.tanggalPelaksanaan;
     error.value = null;
     editing.value = true;
@@ -98,7 +99,8 @@ class RkhDetailController extends GetxController {
           judulKegiatan: j,
           rencanaKegiatan: r,
           tipeAktivitas: t,
-          estimasiBiayaHarian: biaya.text.isEmpty ? '0' : biaya.text,
+          // Kolom berisi "150.000"; server menerima digit polos.
+          estimasiBiayaHarian: rupiahDigits(biaya.text),
         ),
       );
       editing.value = false;

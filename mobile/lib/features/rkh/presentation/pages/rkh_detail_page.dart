@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:slamed_app/core/constants/app_constant.dart';
 import 'package:slamed_app/core/theme/app_colors.dart';
@@ -135,7 +134,7 @@ class _EditView extends StatelessWidget {
             TextField(
               controller: c.biaya,
               keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              inputFormatters: const [RupiahInputFormatter()],
               decoration: const InputDecoration(labelText: 'Estimasi biaya harian (Rp)', prefixIcon: Icon(Icons.payments_outlined)),
             ),
           ]),

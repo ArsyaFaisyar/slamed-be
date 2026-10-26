@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:slamed_app/core/constants/app_constant.dart';
 import 'package:slamed_app/core/network/api_exception.dart';
+import 'package:slamed_app/core/utils/currency_format.dart';
 import 'package:slamed_app/features/customer/data/customer_repository.dart';
 import 'package:slamed_app/features/customer/data/models/customer.dart';
 import 'package:slamed_app/features/project/data/models/project.dart';
@@ -57,10 +58,7 @@ class RkhFormController extends GetxController {
     customerId.value = id;
     projectId.value = null;
     projects.clear();
-    if (id == null) {
-      loadingProjects.value = false;
-      return;
-    }
+    if (id == null) return;
     loadingProjects.value = true;
     try {
       final list = await _projectRepo.list(customerId: id);
@@ -104,7 +102,8 @@ class RkhFormController extends GetxController {
         judulKegiatan: judul.text.trim(),
         rencanaKegiatan: rencana.text.trim(),
         tipeAktivitas: tipe.text.trim(),
-        estimasiBiayaHarian: biaya.text.isEmpty ? '0' : biaya.text,
+        // Kolom berisi "1.500.000"; server menerima digit polos.
+        estimasiBiayaHarian: rupiahDigits(biaya.text),
       ));
       Get.back<bool>(result: true);
     } catch (e) {

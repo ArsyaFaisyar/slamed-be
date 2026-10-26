@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:slamed_app/core/constants/app_constant.dart';
 import 'package:slamed_app/core/theme/app_colors.dart';
+import 'package:slamed_app/core/utils/currency_format.dart';
 import 'package:slamed_app/core/utils/date_format.dart';
 import 'package:slamed_app/features/rkh/presentation/controllers/rkh_form_controller.dart';
 import 'package:slamed_app/shared/widgets/app_card.dart';
@@ -121,7 +121,7 @@ class RkhFormPage extends GetView<RkhFormController> {
             TextField(
               controller: c.biaya,
               keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              inputFormatters: const [RupiahInputFormatter()],
               decoration: const InputDecoration(
                 labelText: 'Estimasi biaya harian (Rp)',
                 prefixIcon: Icon(Icons.payments_outlined),
