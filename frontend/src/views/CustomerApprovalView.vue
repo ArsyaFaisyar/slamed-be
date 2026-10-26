@@ -223,7 +223,7 @@ onMounted(fetchCustomers)
               <td class="whitespace-nowrap px-5 py-4 text-fg-muted">{{ formatDate(customer.created_at, true) }}</td>
 
               <td v-if="tab !== 'PENDING'" class="max-w-[280px] px-5 py-4">
-                <p class="text-xs text-fg-muted">{{ formatDate(customer.verified_at, true) }}</p>
+                <p class="text-fg-muted">{{ formatDate(customer.verified_at, true) }}</p>
                 <p
                   v-if="customer.rejection_reason"
                   class="mt-0.5 line-clamp-2 text-sm"
