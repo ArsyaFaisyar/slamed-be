@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
+from decimal import Decimal
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, case
 from app.db.database import get_db
@@ -12,6 +13,10 @@ from app.schemas.project_prospek import (
     ProjectProspekUpdate,
     ProjectProspekResponse,
 )
+from app.models.rkh import RKH
+from app.models.lkh import LKH
+from app.models.request_penawaran import RequestPenawaran
+from app.models.request_penawaran_item import RequestPenawaranItem
 from app.schemas.project_dashboard import ProjectDashboardSummary
 from app.core.dependencies import get_current_user, require_roles
 from app.utils.project_log import catat_project_log
@@ -139,6 +144,78 @@ def get_project_dashboard_summary(
         "nilai_hot_prospek": result.nilai_hot_prospek,
     }
 
+@router.get("/{project_id}/rab")
+def get_project_rab(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project = get_project_query(
+        db, current_user
+    ).filter(
+        ProjectProspek.id == project_id
+    ).first()
+
+    if not project:
+        raise HTTPException(
+            status_code=404,
+            detail="Project tidak ditemukan atau kamu tidak memiliki akses",
+        )
+    requests = (
+        db.query(RequestPenawaran)
+        .join(LKH, LKH.id == RequestPenawaran.lkh_id)
+        .join(RKH, RKH.id == LKH.rkh_id)
+        .filter(RKH.project_id == project_id)
+        .order_by(RequestPenawaran.id.desc())
+        .all()
+    )
+    hasil = []
+    for request in requests:
+        items = (
+            db.query(RequestPenawaranItem)
+            .filter(
+                RequestPenawaranItem.request_penawaran_id
+                == request.id
+            )
+            .order_by(RequestPenawaranItem.id.asc())
+            .all()
+        )
+        rincian = []
+        total_pagu = Decimal("0")
+        for item in items:
+            subtotal = (
+                item.jumlah * item.harga_pagu
+                if item.harga_pagu is not None
+                else None
+            )
+            if subtotal is not None:
+                total_pagu += subtotal
+            rincian.append({
+                "id": item.id,
+                "nama_barang": item.nama_barang,
+                "spesifikasi": item.spesifikasi,
+                "jumlah": item.jumlah,
+                "satuan": item.satuan,
+                "harga_pagu": item.harga_pagu,
+                "subtotal": subtotal,
+            })
+        hasil.append({
+            "request_penawaran_id": request.id,
+            "tanggal_request": request.tanggal_request,
+            "mode_pagu": request.mode_pagu,
+            "total_pagu": (
+                request.total_pagu
+                if request.total_pagu is not None
+                else total_pagu
+            ),
+            "items": rincian,
+        })
+    return {
+        "project_id": project.id,
+        "nama_project": project.nama_project,
+        "jumlah_request_penawaran": len(hasil),
+        "request_penawaran": hasil,
+    }
 
 @router.get("/{project_id}", response_model=ProjectProspekResponse)
 def get_project(
@@ -155,9 +232,7 @@ def get_project(
             status_code=404,
             detail="Project tidak ditemukan atau kamu tidak memiliki akses",
         )
-
     return project
-
 
 @router.post(
     "/",
