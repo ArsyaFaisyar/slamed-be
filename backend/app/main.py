@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,7 @@ from app.routers.customer_categories import router as customer_categories_router
 from app.routers.project_statuses import router as project_statuses_router
 from app.routers.request_penawaran import router as request_penawaran_router
 from app.routers.project_log import router as project_log_router
+from app.routers.template_penawaran import router as template_penawaran_router
 app = FastAPI(title="Sales Management System API", version="1.0.0")
 
 app.add_middleware(
@@ -36,9 +38,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-os.makedirs("uploads", exist_ok=True)
+# os.makedirs("uploads", exist_ok=True)
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+app.mount(
+    "/uploads",
+    StaticFiles(directory=str(UPLOAD_DIR)),
+    name="uploads",
+)
 
 app.include_router(auth_router)
 app.include_router(profile_router)
@@ -55,6 +64,7 @@ app.include_router(media_pengadaan_router)
 app.include_router(project_statuses_router)
 app.include_router(request_penawaran_router)
 app.include_router(project_log_router)
+app.include_router(template_penawaran_router)
 
 @app.get("/")
 def root():
