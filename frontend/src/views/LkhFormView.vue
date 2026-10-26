@@ -213,6 +213,20 @@ const dirty = computed(
     snapshot() !== initialSnapshot.value,
 );
 
+const rkhCustomer = computed(
+  () => customers.value.find((item) => item.id === rkh.value?.customer_id) ?? null,
+);
+
+// LKH baru: nama dan nomor PIC diisi otomatis dari data customer (masih bisa diubah).
+const showPicHint = computed(
+  () => !isEdit.value && !readonly.value && !!(rkhCustomer.value?.nama_pic || rkhCustomer.value?.kontak_pic),
+);
+
+// Kontak customer bisa berformat bebas (+62, spasi, tanda hubung); field ini hanya menerima angka, maks 15.
+function toPicNumber(value: string | null | undefined) {
+  return (value ?? "").replace(/\D/g, "").slice(0, 15);
+}
+
 function resetForm() {
   foto.value = null;
   fotoError.value = "";
@@ -221,8 +235,8 @@ function resetForm() {
   createdId.value = null;
   form.tanggal_kunjungan = parseDateString(lkh.value?.tanggal_kunjungan) ?? new Date();
   form.hasil_kunjungan = lkh.value?.hasil_kunjungan ?? "";
-  form.nama_pic = lkh.value?.nama_pic ?? "";
-  form.nomor_pic = lkh.value?.nomor_pic ?? "";
+  form.nama_pic = lkh.value?.nama_pic ?? rkhCustomer.value?.nama_pic ?? "";
+  form.nomor_pic = lkh.value?.nomor_pic ?? toPicNumber(rkhCustomer.value?.kontak_pic);
   form.tindak_lanjut = lkh.value?.tindak_lanjut ?? "";
   form.tanggal_follow_up = parseDateString(lkh.value?.tanggal_follow_up ?? undefined) ?? null;
   form.latitude = lkh.value?.latitude ?? null;
@@ -549,6 +563,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             :readonly="readonly"
             :invalid="!!fieldError('nama_pic')"
           />
+          <p v-if="showPicHint" class="mt-1 text-xs text-fg-muted">Diisi otomatis dari data customer, bisa diubah.</p>
         </LkhFormField>
 
         <LkhFormField label="Nomor PIC" for-id="lkh-nomor-pic" required :error="fieldError('nomor_pic')">
@@ -564,6 +579,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", onBeforeUnload)
             :invalid="!!fieldError('nomor_pic')"
             @beforeinput="onNomorPicBeforeInput"
           />
+          <p v-if="showPicHint" class="mt-1 text-xs text-fg-muted">Diisi otomatis dari data customer, bisa diubah.</p>
         </LkhFormField>
 
         <LkhFormField

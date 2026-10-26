@@ -6,10 +6,13 @@ import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import BranchLogo from './BranchLogo.vue'
+import BranchImageField from './BranchImageField.vue'
 import {
   createBranch,
   updateBranch,
+  uploadBranchCoverImage,
   uploadBranchLogo,
+  uploadBranchSignatureImage,
   type Branch,
   type BranchInput,
 } from '../../api/branches.ts'
@@ -57,6 +60,14 @@ const logoFile = ref<File | null>(null)
 const logoPreview = ref<string | null>(null)
 const logoError = ref('')
 
+const coverField = ref<InstanceType<typeof BranchImageField>>()
+const coverFile = ref<File | null>(null)
+const coverError = ref('')
+
+const signatureField = ref<InstanceType<typeof BranchImageField>>()
+const signatureFile = ref<File | null>(null)
+const signatureError = ref('')
+
 const isEdit = computed(() => !!props.branch)
 const targetId = computed(() => props.branch?.id ?? createdId.value)
 
@@ -70,6 +81,7 @@ const clientErrors = computed<Partial<Record<Field, string>>>(() => {
 })
 
 const hasClientErrors = computed(() => Object.values(clientErrors.value).some(Boolean))
+const hasImageErrors = computed(() => !!(logoError.value || coverError.value || signatureError.value))
 
 function fieldError(field: Field) {
   return serverErrors.value[field] || (submitted.value ? clientErrors.value[field] : '') || ''
@@ -82,14 +94,26 @@ function clearLogo() {
   if (logoInput.value) logoInput.value.value = ''
 }
 
+function clearCover() {
+  coverField.value?.clear()
+}
+
+function clearSignature() {
+  signatureField.value?.clear()
+}
+
 function reset() {
   for (const key of allKeys) form[key] = props.branch?.[key] ?? ''
   submitted.value = false
   formError.value = ''
   serverErrors.value = {}
   logoError.value = ''
+  coverError.value = ''
+  signatureError.value = ''
   createdId.value = undefined
   clearLogo()
+  clearCover()
+  clearSignature()
 }
 
 watch(visible, (value) => {
@@ -152,9 +176,31 @@ function handleSaveError(error: unknown) {
   }
 }
 
+async function uploadImages(id: number) {
+  const uploads = [
+    { label: 'logo', file: logoFile.value, run: uploadBranchLogo, clear: clearLogo },
+    { label: 'cover', file: coverFile.value, run: uploadBranchCoverImage, clear: clearCover },
+    { label: 'tanda tangan', file: signatureFile.value, run: uploadBranchSignatureImage, clear: clearSignature },
+  ].filter((upload): upload is typeof upload & { file: File } => upload.file !== null)
+
+  const failures: string[] = []
+
+  for (const upload of uploads) {
+    try {
+      await upload.run(id, upload.file)
+    } catch (error) {
+      failures.push(`${upload.label} (${getErrorMessage(error, 'terjadi kesalahan')})`)
+    } finally {
+      upload.clear()
+    }
+  }
+
+  return failures
+}
+
 async function onSubmit() {
   submitted.value = true
-  if (hasClientErrors.value) return
+  if (hasClientErrors.value || hasImageErrors.value) return
 
   saving.value = true
   formError.value = ''
@@ -170,13 +216,12 @@ async function onSubmit() {
 
   emit('saved')
 
-  if (logoFile.value && targetId.value !== undefined) {
-    try {
-      await uploadBranchLogo(targetId.value, logoFile.value)
-      emit('saved')
-    } catch (error) {
-      formError.value = `Data tersimpan, tetapi logo gagal diunggah: ${getErrorMessage(error, 'terjadi kesalahan')}`
-      clearLogo()
+  if (targetId.value !== undefined) {
+    const failures = await uploadImages(targetId.value)
+    emit('saved')
+
+    if (failures.length > 0) {
+      formError.value = `Data tersimpan, tetapi gagal mengunggah: ${failures.join(', ')}`
       saving.value = false
       return
     }
@@ -228,6 +273,31 @@ async function onSubmit() {
           <p class="text-xs text-fg-muted">JPG, PNG, atau WEBP. Maksimal 5 MB.</p>
           <Message v-if="logoError" severity="error" size="small" variant="simple">{{ logoError }}</Message>
         </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <BranchImageField
+          ref="coverField"
+          v-model:file="coverFile"
+          v-model:error="coverError"
+          label="Cover cabang"
+          input-label="Pilih cover"
+          :current="branch?.cover_image"
+          fit="cover"
+          :disabled="saving"
+        />
+
+        <BranchImageField
+          ref="signatureField"
+          v-model:file="signatureFile"
+          v-model:error="signatureError"
+          label="Tanda tangan direktur"
+          input-label="Pilih tanda tangan"
+          :current="branch?.signature_image"
+          fit="contain"
+          box-class="h-28 w-full bg-white"
+          :disabled="saving"
+        />
       </div>
 
       <div class="grid gap-4 sm:grid-cols-2">

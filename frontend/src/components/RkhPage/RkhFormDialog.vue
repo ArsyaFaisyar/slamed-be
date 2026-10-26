@@ -21,13 +21,31 @@ const props = defineProps<{
   projectOptions: ProjectOption[];
 }>();
 
-const maxDate = computed(() => {
-  const max = new Date()
-  max.setDate(max.getDate() + 7)
-  return max
-})
-
 const emit = defineEmits<{ created: [] }>();
+
+// Kedua tanggal hanya boleh diisi dari hari ini sampai 7 hari ke depan.
+const MAX_DAYS_AHEAD = 7;
+
+function startOfToday() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+// Diperbarui setiap dialog dibuka, supaya tidak basi kalau halaman dibiarkan terbuka lewat tengah malam.
+const today = ref(startOfToday());
+
+const maxDate = computed(() => {
+  const max = new Date(today.value);
+  max.setDate(max.getDate() + MAX_DAYS_AHEAD);
+  return max;
+});
+
+function isOutOfRange(date: Date) {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+  return day < today.value || day > maxDate.value;
+}
 
 const fields = ["customer_id", "project_id", "tanggal_rencana", "tanggal_pelaksanaan", "judul_kegiatan", "rencana_kegiatan", "tipe_aktivitas", "estimasi_biaya_harian"] as const;
 type Field = (typeof fields)[number];
@@ -46,7 +64,6 @@ function emptyForm() {
 }
 
 const form = reactive(emptyForm());
-const today = new Date();
 const submitted = ref(false);
 const saving = ref(false);
 const formError = ref("");
@@ -82,11 +99,33 @@ watch(
   },
 );
 
+// Tanggal pelaksanaan tidak boleh lebih awal dari tanggal rencana.
+watch(
+  () => form.tanggal_rencana,
+  (rencana) => {
+    if (rencana && form.tanggal_pelaksanaan && form.tanggal_pelaksanaan < rencana) {
+      form.tanggal_pelaksanaan = null;
+    }
+  },
+);
+
+const rangeHint = computed(() => `Hanya bisa diisi sampai ${MAX_DAYS_AHEAD} hari ke depan dari hari ini`);
+
 const clientErrors = computed<Record<Field, string>>(() => ({
   customer_id: form.customer_id ? "" : "Customer wajib dipilih",
   project_id: form.project_id ? "" : "Project wajib dipilih",
-  tanggal_rencana: form.tanggal_rencana ? "" : "Tanggal rencana wajib diisi",
-  tanggal_pelaksanaan: "",
+  tanggal_rencana: !form.tanggal_rencana
+    ? "Tanggal rencana wajib diisi"
+    : isOutOfRange(form.tanggal_rencana)
+      ? rangeHint.value
+      : "",
+  tanggal_pelaksanaan: !form.tanggal_pelaksanaan
+    ? ""
+    : isOutOfRange(form.tanggal_pelaksanaan)
+      ? rangeHint.value
+      : form.tanggal_rencana && form.tanggal_pelaksanaan < form.tanggal_rencana
+        ? "Tanggal pelaksanaan tidak boleh sebelum tanggal rencana"
+        : "",
   judul_kegiatan: form.judul_kegiatan.trim() ? "" : "Judul kegiatan wajib diisi",
   rencana_kegiatan: form.rencana_kegiatan.trim() ? "" : "Rencana kegiatan wajib diisi",
   tipe_aktivitas: form.tipe_aktivitas ? "" : "Tipe aktivitas wajib dipilih",
@@ -98,6 +137,7 @@ function fieldError(field: Field) {
 }
 
 function reset() {
+  today.value = startOfToday();
   Object.assign(form, emptyForm());
   submitted.value = false;
   formError.value = "";
@@ -178,7 +218,16 @@ async function onSubmit() {
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5">
           <label for="rkh-tanggal-rencana" class="text-sm font-medium">Tanggal rencana</label>
-          <DatePicker v-model="form.tanggal_rencana" input-id="rkh-tanggal-rencana" date-format="dd/mm/yy" show-icon fluid :min-date="today" :invalid="!!fieldError('tanggal_rencana')" />
+          <DatePicker
+            v-model="form.tanggal_rencana"
+            input-id="rkh-tanggal-rencana"
+            date-format="dd/mm/yy"
+            show-icon
+            fluid
+            :min-date="today"
+            :max-date="maxDate"
+            :invalid="!!fieldError('tanggal_rencana')"
+          />
           <Message v-if="fieldError('tanggal_rencana')" severity="error" size="small" variant="simple">
             {{ fieldError("tanggal_rencana") }}
           </Message>
@@ -186,16 +235,16 @@ async function onSubmit() {
 
         <div class="flex flex-col gap-1.5">
           <label for="rkh-tanggal-pelaksanaan" class="text-sm font-medium">Tanggal pelaksanaan</label>
-          <DatePicker 
-            v-model="form.tanggal_pelaksanaan" 
-            input-id="rkh-tanggal-pelaksanaan" 
-            date-format="dd/mm/yy" 
-            show-icon 
-            show-button-bar 
-            fluid 
+          <DatePicker
+            v-model="form.tanggal_pelaksanaan"
+            input-id="rkh-tanggal-pelaksanaan"
+            date-format="dd/mm/yy"
+            show-icon
+            show-button-bar
+            fluid
             :min-date="form.tanggal_rencana || today"
             :max-date="maxDate"
-            :invalid="!!fieldError('tanggal_pelaksanaan')" 
+            :invalid="!!fieldError('tanggal_pelaksanaan')"
           />
           <Message v-if="fieldError('tanggal_pelaksanaan')" severity="error" size="small" variant="simple">
             {{ fieldError("tanggal_pelaksanaan") }}

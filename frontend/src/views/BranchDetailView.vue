@@ -7,6 +7,7 @@ import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
 
 import BranchFormDialog from '../components/BranchPage/BranchFormDialog.vue'
+import BranchImage from '../components/BranchPage/BranchImage.vue'
 import BranchLogo from '../components/BranchPage/BranchLogo.vue'
 
 import { deleteBranch, getBranch, type Branch } from '../api/branches'
@@ -138,8 +139,16 @@ watch(branchId, fetchBranch, { immediate: true })
     </div>
 
     <template v-else-if="branch">
-      <section class="rounded-xl border border-line bg-card p-6">
-        <div class="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+      <section class="overflow-hidden rounded-xl border border-line bg-card">
+        <div class="h-36 w-full bg-brand/10 sm:h-48">
+          <BranchImage :src="branch.cover_image" :alt="`Cover ${branch.nama}`" fit="cover">
+            <div class="flex size-full items-center justify-center text-fg-muted">
+              <i class="pi pi-image text-3xl" />
+            </div>
+          </BranchImage>
+        </div>
+
+        <div class="flex flex-col gap-5 p-6 sm:flex-row sm:items-center sm:justify-between">
           <div class="flex items-center gap-5">
             <BranchLogo :name="branch.nama" :logo="branch.logo" class="size-20 text-2xl" />
 
@@ -231,6 +240,21 @@ watch(branchId, fetchBranch, { immediate: true })
             <dt class="text-xs text-fg-muted">Alamat</dt>
             <dd class="mt-1 whitespace-pre-line break-words text-sm font-medium">
               {{ branch.alamat || '-' }}
+            </dd>
+          </div>
+
+          <div class="sm:col-span-2">
+            <dt class="text-xs text-fg-muted">Tanda tangan direktur</dt>
+            <dd class="mt-2">
+              <div
+                v-if="branch.signature_image"
+                class="inline-flex h-28 w-56 items-center justify-center rounded-lg border border-line bg-white p-2"
+              >
+                <BranchImage :src="branch.signature_image" alt="Tanda tangan direktur" fit="contain">
+                  <span class="text-xs text-neutral-500">Gambar tidak dapat dimuat</span>
+                </BranchImage>
+              </div>
+              <span v-else class="text-sm font-medium">-</span>
             </dd>
           </div>
         </dl>

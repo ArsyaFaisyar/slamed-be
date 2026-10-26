@@ -23,6 +23,7 @@ export const menu: MenuItem[] = [
     children: [
       { label: "Customer", to: "/transaksi/customer" },
       { label: "Project", to: "/transaksi/project" },
+      { label: "Approval Customer", to: "/transaksi/customer-approval" },
     ],
   },
   {

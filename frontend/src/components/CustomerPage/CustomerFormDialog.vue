@@ -30,6 +30,8 @@ interface CategoryOption {
 const props = defineProps<{
   customer?: Customer | null
   salesOptions: SalesOption[]
+  // Dipakai untuk role SALES: sales otomatis dirinya sendiri dan tidak bisa diganti.
+  lockSales?: boolean
 }>()
 
 const visible = defineModel<boolean>('visible', { default: false })
@@ -121,6 +123,11 @@ function reset() {
   form.kota = props.customer?.kota ?? ''
   form.kategori = props.customer?.kategori ?? null
   form.sales_id = props.customer?.sales_id ?? null
+
+  if (props.lockSales && !props.customer) {
+    form.sales_id = props.salesOptions[0]?.value ?? null
+  }
+
   submitted.value = false
   formError.value = ''
   serverErrors.value = {}
@@ -207,7 +214,8 @@ async function onSubmit() {
     const payload = buildPayload()
 
     if (props.customer) {
-      if (Object.keys(payload).length > 0) {
+      // Untuk sales, setiap simpan = pengajuan ulang, jadi tetap kirim walau tidak ada field berubah.
+      if (Object.keys(payload).length > 0 || props.lockSales) {
         await updateCustomer(props.customer.id, payload)
       }
     } else {
@@ -237,7 +245,7 @@ async function onSubmit() {
   <Dialog
     v-model:visible="visible"
     modal
-    :header="isEdit ? 'Edit customer' : 'Tambah customer'"
+    :header="isEdit ? 'Edit customer' : lockSales ? 'Ajukan customer' : 'Tambah customer'"
     class="w-[calc(100vw-2rem)] max-w-2xl"
     :draggable="false"
     :closable="!saving"
@@ -251,6 +259,18 @@ async function onSubmit() {
     >
       <Message v-if="formError" severity="error" size="small">
         {{ formError }}
+      </Message>
+
+      <Message v-if="lockSales && !isEdit" severity="info" size="small" :closable="false">
+        Customer yang Anda ajukan akan berstatus menunggu dan baru bisa dipakai di RKH dan project
+        setelah disetujui SPV.
+      </Message>
+
+      <Message v-if="lockSales && isEdit" severity="warn" size="small" :closable="false">
+        <template v-if="customer?.approval_status === 'REJECTED'">
+          Customer ini ditolak SPV{{ customer.rejection_reason ? `: ${customer.rejection_reason}` : '' }}.
+        </template>
+        Setelah disimpan, customer diajukan ulang dan menunggu persetujuan SPV.
       </Message>
 
       <div class="grid gap-4 sm:grid-cols-2">
@@ -335,6 +355,7 @@ async function onSubmit() {
             option-label="label"
             option-value="value"
             placeholder="Pilih sales"
+            :disabled="lockSales"
             filter
             fluid
             :invalid="!!fieldError('sales_id')"
@@ -383,7 +404,7 @@ async function onSubmit() {
       <Button
         type="submit"
         form="customer-form"
-        label="Simpan"
+        :label="lockSales ? (isEdit ? 'Simpan dan ajukan ulang' : 'Ajukan') : 'Simpan'"
         icon="pi pi-check"
         :loading="saving"
       />

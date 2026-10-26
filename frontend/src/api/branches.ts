@@ -1,6 +1,6 @@
 import { http } from "./http";
 
-const LOGO_FIELD = "file";
+const FILE_FIELD = "file";
 
 export interface Branch {
   id: number;
@@ -12,6 +12,8 @@ export interface Branch {
   website: string | null;
   nama_direktur: string | null;
   logo: string | null;
+  cover_image: string | null;
+  signature_image: string | null;
 }
 
 export type BranchInput = {
@@ -44,8 +46,20 @@ export async function deleteBranch(id: number): Promise<void> {
   await http.delete(`/branches/${id}`);
 }
 
-export async function uploadBranchLogo(id: number, file: File): Promise<void> {
+async function uploadBranchImage(id: number, path: string, file: File): Promise<void> {
   const body = new FormData();
-  body.append(LOGO_FIELD, file);
-  await http.post(`/branches/${id}/logo`, body);
+  body.append(FILE_FIELD, file);
+  await http.post(`/branches/${id}/${path}`, body);
+}
+
+export function uploadBranchLogo(id: number, file: File): Promise<void> {
+  return uploadBranchImage(id, "logo", file);
+}
+
+export function uploadBranchCoverImage(id: number, file: File): Promise<void> {
+  return uploadBranchImage(id, "cover-image", file);
+}
+
+export function uploadBranchSignatureImage(id: number, file: File): Promise<void> {
+  return uploadBranchImage(id, "signature-image", file);
 }

@@ -19,9 +19,7 @@ router = APIRouter(
 @router.get("/", response_model=list[CustomerCategoryResponse])
 def get_categories(
     db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_roles("SUPERADMIN", "SPV")
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     return db.query(CustomerCategory).order_by(
         CustomerCategory.nama.asc()
@@ -31,9 +29,7 @@ def get_categories(
 def get_category(
     category_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_roles("SUPERADMIN", "SPV")
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     category = db.query(CustomerCategory).filter(
         CustomerCategory.id == category_id

@@ -13,7 +13,17 @@ export interface LoginPayload {
   captcha_answer: number;
 }
 
-export type AuthUser = Record<string, unknown>;
+export interface AuthUser {
+  id: number;
+  nama: string;
+  username: string;
+  email: string;
+  role: string;
+  foto_profil?: string | null;
+  branch_id?: number | null;
+  area_id?: number | null;
+  [key: string]: unknown;
+}
 
 export interface LoginResponse {
   access_token: string;

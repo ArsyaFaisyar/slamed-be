@@ -9,10 +9,12 @@ import { useConfirm } from 'primevue/useconfirm'
 
 import RkhFormDialog from '../components/RkhPage/RkhFormDialog.vue'
 import EditRkhDialog from '../components/RkhPage/EditRkhDialog.vue'
+import RkhDetailDialog from '../components/RkhPage/RkhDetailDialog.vue'
 import type { Option, ProjectOption } from '../components/RkhPage/Types'
 
 import { deleteRkh, getRkh, type Rkh } from '../api/rkh'
-import { getCustomers, type Customer } from '../api/customers'
+import { getLkh, type Lkh } from '../api/lkh'
+import { getCustomers, isCustomerApproved, type Customer } from '../api/customers'
 import { getProjects, type Project } from '../api/projects'
 import { getUsers, type User } from '../api/users'
 import { getErrorMessage } from '../utils/error'
@@ -21,6 +23,7 @@ import { formatDate } from '../utils/date'
 const confirm = useConfirm()
 
 const items = ref<Rkh[]>([])
+const lkhList = ref<Lkh[]>([])
 const customers = ref<Customer[]>([])
 const projects = ref<Project[]>([])
 const users = ref<User[]>([])
@@ -33,9 +36,21 @@ const errorMessage = ref('')
 const createDialogVisible = ref(false)
 const editDialogVisible = ref(false)
 const selectedEditRkh = ref<Rkh | null>(null)
+const detailDialogVisible = ref(false)
+const selectedDetailRkh = ref<Rkh | null>(null)
 
+const LOCKED_HINT = 'LKH sudah dibuat, RKH tidak bisa diubah'
+
+// RKH yang sudah punya LKH (dibuat pertama kali) dikunci: tidak bisa diedit/dihapus.
+const lockedRkhIds = computed(() => new Set(lkhList.value.map((lkh) => Number(lkh.rkh_id))))
+
+function isLocked(item: Rkh) {
+  return lockedRkhIds.value.has(Number(item.id))
+}
+
+// Hanya customer yang sudah disetujui yang bisa dipilih di form RKH.
 const customerOptions = computed<Option[]>(() =>
-  customers.value.map((customer) => ({
+  customers.value.filter(isCustomerApproved).map((customer) => ({
     label: customer.nama_instansi,
     value: Number(customer.id),
   })),
@@ -126,12 +141,20 @@ const filteredItems = computed(() => {
   })
 })
 
+function openDetail(item: Rkh) {
+  selectedDetailRkh.value = item
+  detailDialogVisible.value = true
+}
+
 function openEdit(item: Rkh) {
+  if (isLocked(item)) return
   selectedEditRkh.value = item
   editDialogVisible.value = true
 }
 
 function confirmDelete(item: Rkh) {
+  if (isLocked(item)) return
+
   confirm.require({
     header: 'Hapus RKH',
     message: `Yakin ingin menghapus RKH "${item.judul_kegiatan}"? Tindakan ini tidak dapat dibatalkan.`,
@@ -162,14 +185,16 @@ async function fetchItems() {
   errorMessage.value = ''
 
   try {
-    const [rkhList, customerList, projectList] = await Promise.all([
+    const [rkhData, customerList, projectList, lkhData] = await Promise.all([
       getRkh(),
       getCustomers(),
       getProjects(),
+      getLkh(),
     ])
-    items.value = Array.isArray(rkhList) ? rkhList : []
+    items.value = Array.isArray(rkhData) ? rkhData : []
     customers.value = Array.isArray(customerList) ? customerList : []
     projects.value = Array.isArray(projectList) ? projectList : []
+    lkhList.value = Array.isArray(lkhData) ? lkhData : []
   } catch (error) {
     errorMessage.value = getErrorMessage(error, 'Gagal memuat daftar RKH')
   } finally {
@@ -289,7 +314,7 @@ onMounted(fetchItems)
               <th class="px-5 py-3 font-medium">Tipe</th>
               <th class="px-5 py-3 text-right font-medium">Estimasi biaya</th>
               <th class="px-5 py-3 font-medium">Status</th>
-              <th class="w-28 px-5 py-3 text-center font-medium">Aksi</th>
+              <th class="w-36 px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
           </thead>
 
@@ -353,24 +378,50 @@ onMounted(fetchItems)
               <td class="px-5 py-4 text-center">
                 <div class="flex items-center justify-center gap-1">
                   <Button
-                    icon="pi pi-pencil"
+                    icon="pi pi-eye"
                     variant="text"
                     rounded
                     severity="secondary"
-                    aria-label="Edit RKH"
-                    v-tooltip.top="'Edit RKH'"
-                    @click="openEdit(item)"
+                    aria-label="Lihat detail RKH"
+                    v-tooltip.top="'Lihat detail'"
+                    @click="openDetail(item)"
                   />
 
-                  <Button
-                    icon="pi pi-trash"
-                    variant="text"
-                    rounded
-                    severity="danger"
-                    aria-label="Hapus RKH"
-                    v-tooltip.top="'Hapus RKH'"
-                    @click="confirmDelete(item)"
-                  />
+                  <!-- Dikunci: sudah ada LKH -->
+                  <template v-if="isLocked(item)">
+                    <span v-tooltip.top="LOCKED_HINT" class="inline-flex">
+                      <Button
+                        icon="pi pi-lock"
+                        variant="text"
+                        rounded
+                        severity="secondary"
+                        aria-label="RKH terkunci, LKH sudah dibuat"
+                        disabled
+                      />
+                    </span>
+                  </template>
+
+                  <template v-else>
+                    <Button
+                      icon="pi pi-pencil"
+                      variant="text"
+                      rounded
+                      severity="secondary"
+                      aria-label="Edit RKH"
+                      v-tooltip.top="'Edit RKH'"
+                      @click="openEdit(item)"
+                    />
+
+                    <Button
+                      icon="pi pi-trash"
+                      variant="text"
+                      rounded
+                      severity="danger"
+                      aria-label="Hapus RKH"
+                      v-tooltip.top="'Hapus RKH'"
+                      @click="confirmDelete(item)"
+                    />
+                  </template>
                 </div>
               </td>
             </tr>
@@ -382,6 +433,15 @@ onMounted(fetchItems)
         Total {{ items.length }} RKH
       </footer>
     </section>
+
+    <RkhDetailDialog
+      v-model:visible="detailDialogVisible"
+      :rkh="selectedDetailRkh"
+      :customer-name="selectedDetailRkh ? customerName(selectedDetailRkh.customer_id) : '-'"
+      :project-name="selectedDetailRkh ? projectName(selectedDetailRkh.project_id) : '-'"
+      :sales-name="selectedDetailRkh ? salesName(selectedDetailRkh.sales_id) : '-'"
+      :locked="selectedDetailRkh ? isLocked(selectedDetailRkh) : false"
+    />
 
     <RkhFormDialog
       v-model:visible="createDialogVisible"
