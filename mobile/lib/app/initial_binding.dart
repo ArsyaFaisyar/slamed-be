@@ -6,6 +6,7 @@ import 'package:slamed_app/features/auth/presentation/controllers/auth_controlle
 import 'package:slamed_app/features/customer/data/customer_repository.dart';
 import 'package:slamed_app/features/lkh/data/lkh_repository.dart';
 import 'package:slamed_app/features/profile/data/profile_repository.dart';
+import 'package:slamed_app/features/profile/presentation/controllers/profile_controller.dart';
 import 'package:slamed_app/features/project/data/project_repository.dart';
 import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
 
@@ -31,6 +32,11 @@ class InitialBinding extends Bindings {
         profileRepository: profileRepository,
       ),
       permanent: true,
+    );
+    // Dipakai halaman Profil, baik sebagai tab maupun sebagai rute /profile.
+    Get.lazyPut<ProfileController>(
+      () => ProfileController(Get.find<ProfileRepository>(), Get.find<AuthController>()),
+      fenix: true,
     );
   }
 }
