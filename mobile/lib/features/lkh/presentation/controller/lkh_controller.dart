@@ -128,10 +128,17 @@ class LkhController extends GetxController {
   }
 
   Future<void> openForm(Rkh r) async {
+    // PIC customer dipakai untuk mengisi form otomatis; pengguna tetap bisa mengubahnya.
+    final cust = customers[r.customerId];
     // Tanpa generik: Get.toNamed<bool> memicu cast GetPageRoute -> Route<bool?> yang gagal.
     final ok = await Get.toNamed(
       AppRoutes.lkhForm,
-      arguments: LkhFormArgs(r, customerName(r.customerId)),
+      arguments: LkhFormArgs(
+        r,
+        customerName(r.customerId),
+        namaPic: cust?.namaPic,
+        nomorPic: cust?.kontakPic,
+      ),
     );
     if (ok == true) load();
   }

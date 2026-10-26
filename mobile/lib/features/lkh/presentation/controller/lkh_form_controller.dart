@@ -18,9 +18,12 @@ import 'package:slamed_app/shared/helpers/snackbar.dart';
 
 /// Argumen navigasi ke form LKH.
 class LkhFormArgs {
-  const LkhFormArgs(this.rkh, this.customerName);
+  const LkhFormArgs(this.rkh, this.customerName, {this.namaPic, this.nomorPic});
   final Rkh rkh;
   final String customerName;
+
+  /// PIC dari data customer untuk mengisi form otomatis (boleh diubah pengguna).
+  final String? namaPic, nomorPic;
 }
 
 /// Bahan untuk mencetak stempel waktu/lokasi di foto (dijalankan di isolate).
@@ -99,6 +102,9 @@ class LkhFormController extends GetxController {
     final args = Get.arguments as LkhFormArgs;
     rkh = args.rkh;
     customerName = args.customerName;
+    // Terisi dari data customer; tetap bisa diubah (yang dikirim adalah isi kolom saat submit).
+    namaPic.text = (args.namaPic ?? '').trim();
+    nomorPic.text = (args.nomorPic ?? '').trim();
     final now = DateTime.now();
     tanggal.value = rkh.tanggalPelaksanaan.isAfter(now) ? now : rkh.tanggalPelaksanaan;
   }
