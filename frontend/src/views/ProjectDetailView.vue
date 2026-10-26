@@ -4,7 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 
+import Tab from 'primevue/tab'
+import TabList from 'primevue/tablist'
+import TabPanel from 'primevue/tabpanel'
+import TabPanels from 'primevue/tabpanels'
+import Tabs from 'primevue/tabs'
+
 import ProjectLogSection from '../components/ProjectPage/ProjectLogSection.vue'
+import ProjectRabSection from '../components/ProjectPage/ProjectRabSection.vue'
 
 import { getProjects, type Project } from '../api/projects'
 import { getCustomers } from '../api/customers'
@@ -23,6 +30,16 @@ const customerName = ref('')
 
 const loading = ref(false)
 const loadError = ref('')
+
+// Tab aktif disimpan di URL (?tab=rab) supaya tetap sama setelah halaman dimuat ulang.
+const TAB_VALUES = ['logs', 'rab']
+const activeTab = ref<string>(
+  TAB_VALUES.includes(String(route.query.tab)) ? String(route.query.tab) : 'logs',
+)
+
+watch(activeTab, (tab) => {
+  router.replace({ query: { ...route.query, tab } })
+})
 
 const dateFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' })
 const rupiahFormat = new Intl.NumberFormat('id-ID', {
@@ -164,7 +181,25 @@ function goBack() {
         </dl>
       </section>
 
-      <ProjectLogSection :project-id="project.id" />
+      <Tabs v-model:value="activeTab" lazy>
+        <TabList>
+          <Tab value="logs">
+            <span class="flex items-center gap-2"><i class="pi pi-history" />Log</span>
+          </Tab>
+          <Tab value="rab">
+            <span class="flex items-center gap-2"><i class="pi pi-calculator" />RAB</span>
+          </Tab>
+        </TabList>
+
+        <TabPanels class="bg-transparent! px-0! pb-0!">
+          <TabPanel value="logs">
+            <ProjectLogSection :project-id="project.id" />
+          </TabPanel>
+          <TabPanel value="rab">
+            <ProjectRabSection :project-id="project.id" />
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
     </template>
   </div>
 </template>
