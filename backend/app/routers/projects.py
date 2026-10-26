@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, Depends, HTTPException, Response
 from decimal import Decimal
 from sqlalchemy.orm import Session, joinedload
@@ -24,6 +23,14 @@ from app.utils.project_log import catat_project_log
 from app.core.roles import PROJECT_VIEW_ROLES
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
+
+PIPELINE_PROSPEK = "Prospek"
+PIPELINE_HOT = "Hot Prospek"
+PIPELINE_VALUES = (PIPELINE_PROSPEK, PIPELINE_HOT)
+
+# Saat status project berubah ke salah satu nama ini (tanpa membedakan huruf besar/kecil),
+# pipeline otomatis menjadi Hot Prospek. Sesuaikan dengan nama di Master Status Project.
+HOT_PROSPEK_STATUS_NAMES = {"req penawaran", "request penawaran"}
 
 
 def get_project_query(db: Session, current_user: User):
@@ -60,6 +67,7 @@ def get_projects(
 
     return query.order_by(ProjectProspek.id.desc()).all()
 
+
 @router.get(
     "/dashboard/summary",
     response_model=ProjectDashboardSummary,
@@ -88,14 +96,14 @@ def get_project_dashboard_summary(
 
         func.sum(
             case(
-                (ProjectProspek.pipeline_status == "Prospek", 1),
+                (ProjectProspek.pipeline_status == PIPELINE_PROSPEK, 1),
                 else_=0,
             )
         ).label("jumlah_prospek"),
 
         func.sum(
             case(
-                (ProjectProspek.pipeline_status == "Hot Prospek", 1),
+                (ProjectProspek.pipeline_status == PIPELINE_HOT, 1),
                 else_=0,
             )
         ).label("jumlah_hot_prospek"),
@@ -104,7 +112,7 @@ def get_project_dashboard_summary(
             func.sum(
                 case(
                     (
-                        ProjectProspek.pipeline_status == "Prospek",
+                        ProjectProspek.pipeline_status == PIPELINE_PROSPEK,
                         ProjectProspek.nilai_proyek,
                     ),
                     else_=0,
@@ -117,7 +125,7 @@ def get_project_dashboard_summary(
             func.sum(
                 case(
                     (
-                        ProjectProspek.pipeline_status == "Hot Prospek",
+                        ProjectProspek.pipeline_status == PIPELINE_HOT,
                         ProjectProspek.nilai_proyek,
                     ),
                     else_=0,
@@ -305,7 +313,6 @@ def create_project(
     ).first()
 
 
-
 @router.patch(
     "/{project_id}",
     response_model=ProjectProspekResponse,
@@ -332,10 +339,7 @@ def update_project(
 
     # Validasi pipeline status
     if "pipeline_status" in updates:
-        if updates["pipeline_status"] not in (
-            "Prospek",
-            "Hot Prospek",
-        ):
+        if updates["pipeline_status"] not in PIPELINE_VALUES:
             raise HTTPException(
                 status_code=400,
                 detail="Pipeline status harus Prospek atau Hot Prospek",
@@ -373,12 +377,6 @@ def update_project(
                 detail="Sales tidak ditemukan atau tidak aktif",
             )
 
-    # Simpan nilai lama sebelum perubahan
-    old_values = {
-        field: getattr(project, field)
-        for field in updates
-    }
-
     old_status_id = project.status_id
 
     # Validasi status project sebelum mengubah data
@@ -399,15 +397,19 @@ def update_project(
                 status_code=400,
                 detail="Status project tidak ditemukan atau tidak aktif",
             )
-        if new_status.nama.strip().lower() == "request penawaran":
-            updates["pipeline_status"] = "Hot Prospek"
+
+        # Status Req Penawaran otomatis menaikkan pipeline menjadi Hot Prospek.
+        if new_status.nama.strip().lower() in HOT_PROSPEK_STATUS_NAMES:
+            updates["pipeline_status"] = PIPELINE_HOT
 
         if old_status_id is not None:
             old_status = db.query(ProjectStatus).filter(
                 ProjectStatus.id == old_status_id
             ).first()
 
-    # Terapkan perubahan dan catat field yang benar-benar berubah
+    # Terapkan perubahan dan catat field yang benar-benar berubah.
+    # Nilai lama dibaca saat itu juga, sehingga field yang ditambahkan otomatis
+    # (pipeline_status di atas) ikut tertangani.
     labels = {
         "nama_project": "Nama project",
         "deskripsi": "Deskripsi",
@@ -421,7 +423,7 @@ def update_project(
     perubahan = []
 
     for field, value in updates.items():
-        old_value = old_values[field]
+        old_value = getattr(project, field)
 
         if old_value != value:
             setattr(project, field, value)
@@ -472,15 +474,6 @@ def update_project(
 
     db.commit()
     db.refresh(project)
-
-    return get_project_query(db, current_user).filter(
-        ProjectProspek.id == project_id
-    ).first()
-
-    
-    
-
-    db.commit()
 
     return get_project_query(db, current_user).filter(
         ProjectProspek.id == project_id

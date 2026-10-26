@@ -22,6 +22,7 @@ const viewLoaders: Record<string, () => Promise<unknown>> = {
   "/aktivitas/lkh": () => import("../views/LkhView.vue"),
   "/support/request-penawaran": () => import("../views/RequestPenawaranListView.vue"),
   "/transaksi/customer-approval": () => import("../views/CustomerApprovalView.vue"),
+  "/setting/template-penawaran": () => import("../views/TemplatePenawaranView.vue"),
 };
 
 const pages: RouteRecordRaw[] = leaves.map((leaf) => ({
@@ -61,6 +62,16 @@ const router = createRouter({
           path: "/transaksi/project/:projectId",
           component: () => import("../views/ProjectDetailView.vue"),
           meta: { title: "Detail Project" },
+        },
+        {
+          path: "/setting/template-penawaran/baru",
+          component: () => import("../views/TemplatePenawaranFormView.vue"),
+          meta: { title: "Template Baru" },
+        },
+        {
+          path: "/setting/template-penawaran/:id",
+          component: () => import("../views/TemplatePenawaranFormView.vue"),
+          meta: { title: "Edit Template" },
         },
       ],
     },
