@@ -229,6 +229,7 @@ def create_project(
     ).first()
 
 
+
 @router.patch(
     "/{project_id}",
     response_model=ProjectProspekResponse,
@@ -252,13 +253,19 @@ def update_project(
         )
 
     updates = data.model_dump(exclude_unset=True)
+
+    # Validasi pipeline status
     if "pipeline_status" in updates:
-        if updates["pipeline_status"] not in ("Prospek", "Hot Prospek"):
+        if updates["pipeline_status"] not in (
+            "Prospek",
+            "Hot Prospek",
+        ):
             raise HTTPException(
                 status_code=400,
                 detail="Pipeline status harus Prospek atau Hot Prospek",
             )
-    old_status_id = project.status_id
+
+    # Validasi customer
     if "customer_id" in updates:
         customer = db.query(Customer).filter(
             Customer.id == updates["customer_id"]
@@ -269,12 +276,14 @@ def update_project(
                 status_code=404,
                 detail="Customer tidak ditemukan",
             )
+
         if customer.approval_status != "APPROVED":
             raise HTTPException(
                 status_code=400,
                 detail="Customer belum disetujui, project tidak dapat menggunakan customer ini",
             )
 
+    # Validasi sales
     if updates.get("sales_id") is not None:
         sales = db.query(User).filter(
             User.id == updates["sales_id"],
@@ -288,30 +297,71 @@ def update_project(
                 detail="Sales tidak ditemukan atau tidak aktif",
             )
 
-    for field, value in updates.items():
-        setattr(project, field, value)
+    # Simpan nilai lama sebelum perubahan
+    old_values = {
+        field: getattr(project, field)
+        for field in updates
+    }
+
+    old_status_id = project.status_id
+
+    # Validasi status project sebelum mengubah data
+    new_status = None
+    old_status = None
 
     if (
         "status_id" in updates
-        and project.status_id != old_status_id
+        and updates["status_id"] != old_status_id
     ):
-        old_status = (
-            db.query(ProjectStatus)
-            .filter(ProjectStatus.id == old_status_id)
-            .first()
-        )
-
-        new_status = (
-            db.query(ProjectStatus)
-            .filter(ProjectStatus.id == project.status_id)
-            .first()
-        )
+        new_status = db.query(ProjectStatus).filter(
+            ProjectStatus.id == updates["status_id"],
+            ProjectStatus.is_active == True,
+        ).first()
 
         if not new_status:
             raise HTTPException(
                 status_code=400,
-                detail="Status project tidak ditemukan",
+                detail="Status project tidak ditemukan atau tidak aktif",
             )
+        if new_status.nama.strip().lower() == "request penawaran":
+            updates["pipeline_status"] = "Hot Prospek"
+
+        if old_status_id is not None:
+            old_status = db.query(ProjectStatus).filter(
+                ProjectStatus.id == old_status_id
+            ).first()
+
+    # Terapkan perubahan dan catat field yang benar-benar berubah
+    labels = {
+        "nama_project": "Nama project",
+        "deskripsi": "Deskripsi",
+        "nilai_proyek": "Nilai proyek",
+        "estimasi_closing": "Estimasi closing",
+        "sales_id": "Sales",
+        "pipeline_status": "Pipeline status",
+        "customer_id": "Customer",
+    }
+
+    perubahan = []
+
+    for field, value in updates.items():
+        old_value = old_values[field]
+
+        if old_value != value:
+            setattr(project, field, value)
+
+            # status_id memiliki log tersendiri di bawah
+            if field != "status_id":
+                label = labels.get(field, field)
+                perubahan.append(
+                    f"{label}: {old_value} → {value}"
+                )
+
+    # Catat riwayat status project
+    if (
+        "status_id" in updates
+        and project.status_id != old_status_id
+    ):
         db.add(
             ProjectStatusHistory(
                 project_id=project.id,
@@ -333,6 +383,24 @@ def update_project(
                 f"menjadi {new_status.nama}."
             ),
         )
+
+    # Catat perubahan field lainnya
+    if perubahan:
+        catat_project_log(
+            db=db,
+            project_id=project.id,
+            user_id=current_user.id,
+            aktivitas="Project diperbarui",
+            deskripsi="; ".join(perubahan),
+        )
+
+    db.commit()
+    db.refresh(project)
+
+    return get_project_query(db, current_user).filter(
+        ProjectProspek.id == project_id
+    ).first()
+
     
     
 
