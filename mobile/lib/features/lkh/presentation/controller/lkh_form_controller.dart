@@ -146,7 +146,7 @@ class LkhFormController extends GetxController {
   /// Foto wajib langsung dari kamera, dengan lokasi dan waktu pengambilan tercetak di gambar.
   Future<void> takePhoto() async {
     if (capturing.value) return;
-    // Backend hanya menerima satu foto per LKH; yang sudah terkirim tidak bisa diganti.
+    // Foto yang sudah terkirim tidak diganti dari sisi app.
     if (_fotoUploaded) {
       showSnack('Foto sudah terkirim dan tidak dapat diganti.');
       return;
@@ -276,33 +276,36 @@ class LkhFormController extends GetxController {
     busy.value = true;
     error.value = null;
     try {
-          if (_lkhId == null) {
-      final lkh = await _repo.create(
-        LkhCreate(
+      // 1. Buat LKH (form-urlencoded, tanpa file). Status awal NOT_YET.
+      if (_lkhId == null) {
+        final lkh = await _repo.create(LkhCreate(
           rkhId: rkh.id,
           tanggalKunjungan: tanggal.value,
           hasilKunjungan: hasil.text.trim(),
           namaPic: namaPic.text.trim(),
           nomorPic: nomorPic.text.trim(),
-          tindakLanjut: tindak.text.trim().isEmpty
-              ? null
-              : tindak.text.trim(),
+          tindakLanjut: tindak.text.trim().isEmpty ? null : tindak.text.trim(),
+          // Lokasi LKH = lokasi saat foto diambil.
           latitude: fotoPos.value!.latitude,
           longitude: fotoPos.value!.longitude,
-        ),
-        fotoPath: foto.value!.path,
-      );
-
-      _lkhId = lkh.id;
-      _fotoUploaded = true;
-    }
+        ));
+        _lkhId = lkh.id;
+      }
+      // 2. Unggah foto. Server mengubah status LKH menjadi DONE saat ini berhasil.
+      if (!_fotoUploaded) {
+        await _upload(foto.value!.path, AppConstants.jenisFoto);
+        _fotoUploaded = true;
+      }
+      // 3. Lampiran dokumen (opsional).
       final l = lampiran.value;
       if (l != null && !_lampiranUploaded) {
         await _upload(l.path!, AppConstants.jenisLampiran);
         _lampiranUploaded = true;
       }
       Get.back<bool>(result: true);
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[LKH] submit gagal (lkhId=$_lkhId): $e');
+      debugPrintStack(stackTrace: st, maxFrames: 8);
       error.value = _lkhId == null
           ? errorMessage(e)
           : 'LKH sudah tersimpan, tetapi unggah file gagal: ${errorMessage(e)}\n'

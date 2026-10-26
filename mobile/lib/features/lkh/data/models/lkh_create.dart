@@ -1,5 +1,7 @@
 import 'package:slamed_app/core/utils/date_format.dart';
 
+/// Isi form `POST /lkh/`. Backend menurunkan `sales_id` dari user yang login dan
+/// mengisi `status_lkh` sendiri (NOT_YET, lalu DONE saat foto terunggah).
 class LkhCreate {
   LkhCreate({
     required this.rkhId,
@@ -7,7 +9,6 @@ class LkhCreate {
     required this.hasilKunjungan,
     required this.namaPic,
     required this.nomorPic,
-    this.statusLkh = 'NOT_YET',
     this.tindakLanjut,
     this.latitude,
     this.longitude,
@@ -15,19 +16,19 @@ class LkhCreate {
 
   final int rkhId;
   final DateTime tanggalKunjungan;
-  final String hasilKunjungan, namaPic, nomorPic, statusLkh;
+  final String hasilKunjungan, namaPic, nomorPic;
   final String? tindakLanjut;
   final double? latitude, longitude;
 
-  Map<String, dynamic> toJson() => {
-        'rkh_id': rkhId,
+  /// Endpoint ini memakai form-urlencoded, jadi semua nilai berupa teks.
+  Map<String, String> toForm() => {
+        'rkh_id': '$rkhId',
         'tanggal_kunjungan': toApiDate(tanggalKunjungan),
         'hasil_kunjungan': hasilKunjungan,
         'nama_pic': namaPic,
         'nomor_pic': nomorPic,
-        'status_lkh': statusLkh,
-        if (tindakLanjut != null) 'tindak_lanjut': tindakLanjut,
-        if (latitude != null) 'latitude': latitude,
-        if (longitude != null) 'longitude': longitude,
+        if (tindakLanjut != null) 'tindak_lanjut': tindakLanjut!,
+        if (latitude != null) 'latitude': '$latitude',
+        if (longitude != null) 'longitude': '$longitude',
       };
 }

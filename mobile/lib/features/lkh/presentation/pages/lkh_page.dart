@@ -79,6 +79,7 @@ class LkhPage extends GetView<LkhController> {
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: AppCard(
+                      onTap: () => c.openDetail(l),
                       accent: l.isDone ? AppColors.successFg : AppColors.warningFg,
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Row(children: [

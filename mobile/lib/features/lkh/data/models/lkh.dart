@@ -5,10 +5,11 @@ class Lkh {
     required this.salesId,
     required this.tanggalKunjungan,
     required this.hasilKunjungan,
-    required this.namaPic,
-    required this.nomorPic,
-    required this.statusLkh,
+    this.namaPic = '',
+    this.nomorPic = '',
+    this.statusLkh = 'NOT_YET',
     this.tindakLanjut,
+    this.tanggalFollowUp,
     this.latitude,
     this.longitude,
     this.createdAt,
@@ -18,22 +19,23 @@ class Lkh {
   final DateTime tanggalKunjungan;
   final String hasilKunjungan, namaPic, nomorPic, statusLkh;
   final String? tindakLanjut;
+  final DateTime? tanggalFollowUp;
   final double? latitude, longitude;
   final DateTime? createdAt;
 
-  /// `DONE` otomatis diset backend saat foto kunjungan terunggah.
   bool get isDone => statusLkh.toUpperCase() == 'DONE';
 
   factory Lkh.fromJson(Map<String, dynamic> j) => Lkh(
-        id: (j['id'] as num).toInt(),
-        rkhId: (j['rkh_id'] as num).toInt(),
-        salesId: (j['sales_id'] as num).toInt(),
+        id: j['id'] as int,
+        rkhId: j['rkh_id'] as int,
+        salesId: j['sales_id'] as int,
         tanggalKunjungan: DateTime.parse(j['tanggal_kunjungan'] as String),
         hasilKunjungan: (j['hasil_kunjungan'] ?? '').toString(),
         namaPic: (j['nama_pic'] ?? '').toString(),
         nomorPic: (j['nomor_pic'] ?? '').toString(),
         statusLkh: (j['status_lkh'] ?? 'NOT_YET').toString(),
         tindakLanjut: j['tindak_lanjut'] as String?,
+        tanggalFollowUp: j['tanggal_follow_up'] == null ? null : DateTime.parse(j['tanggal_follow_up'] as String),
         // Backend bisa mengirim bilangan bulat (mis. 20), jadi lewat num.
         latitude: (j['latitude'] as num?)?.toDouble(),
         longitude: (j['longitude'] as num?)?.toDouble(),
