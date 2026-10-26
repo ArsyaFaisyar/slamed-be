@@ -429,7 +429,7 @@ onMounted(() => {
                   class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium"
                   :class="pipelineClass(project.pipeline_status)"
                 >
-                  <i v-if="project.pipeline_status === 'Hot Prospek'" class="pi pi-bolt mr-1 text-[0.7rem]" />
+                  <i v-if="project.pipeline_status === 'Hot Prospek'" class=" mr-1 text-[0.7rem]" />
                   {{ project.pipeline_status }}
                 </span>
                 <span v-else class="text-fg-muted">-</span>

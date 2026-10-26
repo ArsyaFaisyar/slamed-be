@@ -9,6 +9,8 @@ import { getErrorMessage } from '../../utils/error'
 
 const props = defineProps<{ projectId: number }>()
 
+const PAGE_SIZE = 10
+
 // Nama user bisa datang dengan beberapa bentuk tergantung schema backend.
 type LogWithUser = ProjectLog & {
   user_nama?: string | null
@@ -16,24 +18,77 @@ type LogWithUser = ProjectLog & {
   user?: { nama?: string | null } | null
 }
 
+interface Change {
+  label: string
+  from: string
+  to: string
+}
+
 const logs = ref<ProjectLog[]>([])
 const userNames = ref<Map<number, string>>(new Map())
 const loading = ref(false)
 const error = ref('')
+const limit = ref(PAGE_SIZE)
 
-const dateTimeFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+const dayFormat = new Intl.DateTimeFormat('id-ID', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
+const timeFormat = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit' })
 
 const sortedLogs = computed(() =>
   [...logs.value].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
 )
 
-function formatDateTime(value: string) {
+const visibleLogs = computed(() => sortedLogs.value.slice(0, limit.value))
+const remaining = computed(() => Math.max(sortedLogs.value.length - limit.value, 0))
+
+// Contoh: "Senin, 26 Okt 2026 · 09.56"
+function formatTimestamp(value: string) {
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '-' : dateTimeFormat.format(date)
+  if (Number.isNaN(date.getTime())) return '-'
+  return `${dayFormat.format(date)} · ${timeFormat.format(date)}`
 }
 
 function logAction(log: ProjectLog) {
   return log.aktivitas ?? log.aksi ?? null
+}
+
+// Ikon mengikuti jenis aktivitas (tanpa warna dan tanpa latar).
+function logIcon(log: ProjectLog) {
+  const text = (logAction(log) ?? '').toLowerCase()
+
+  if (text.includes('hapus')) return 'pi pi-trash'
+  if (text.includes('laporan') || text.includes('kunjungan') || text.includes('lkh') || text.includes('rkh')) {
+    return 'pi pi-file-edit'
+  }
+  if (text.includes('status')) return 'pi pi-sync'
+  if (text.includes('dibuat')) return 'pi pi-plus'
+  if (text.includes('diperbarui') || text.includes('berubah')) return 'pi pi-pencil'
+
+  return 'pi pi-info-circle'
+}
+
+function displayValue(value: string) {
+  const trimmed = value.trim()
+  return trimmed === '' || trimmed === 'None' || trimmed === 'null' ? 'kosong' : trimmed
+}
+
+// Deskripsi berformat "Label: lama → baru; Label: lama → baru" ditampilkan sebagai daftar perubahan.
+function parseChanges(text: string | null | undefined): Change[] | null {
+  if (!text || !text.includes('→')) return null
+
+  const changes: Change[] = []
+
+  for (const part of text.split('; ')) {
+    const match = part.match(/^(.+?):\s(.*)\s→\s(.*)$/)
+    if (!match) return null
+    changes.push({ label: match[1], from: displayValue(match[2]), to: displayValue(match[3]) })
+  }
+
+  return changes
 }
 
 function directUserName(log: ProjectLog): string | null {
@@ -75,19 +130,42 @@ async function load() {
   }
 }
 
-watch(() => props.projectId, load, { immediate: true })
+watch(
+  () => props.projectId,
+  () => {
+    limit.value = PAGE_SIZE
+    load()
+  },
+  { immediate: true },
+)
 
 defineExpose({ refresh: load })
 </script>
 
 <template>
   <section class="rounded-xl border border-line bg-card">
-    <div class="flex items-baseline justify-between gap-3 border-b border-line p-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
       <div>
         <h2 class="font-semibold">Log project</h2>
-        <p class="mt-1 text-xs text-fg-muted">Riwayat aktivitas pada project ini, terbaru di atas.</p>
+        <p class="mt-0.5 text-xs text-fg-muted">Riwayat aktivitas pada project ini, terbaru di atas.</p>
       </div>
-      <span class="text-sm text-fg-muted">{{ logs.length }} log</span>
+
+      <div class="flex items-center gap-2">
+        <span class="inline-flex rounded-full border border-line px-2.5 py-1 text-xs font-medium tabular-nums">
+          {{ logs.length }} log
+        </span>
+        <Button
+          icon="pi pi-refresh"
+          variant="text"
+          rounded
+          severity="secondary"
+          size="small"
+          aria-label="Muat ulang log"
+          v-tooltip.top="'Muat ulang'"
+          :loading="loading"
+          @click="load"
+        />
+      </div>
     </div>
 
     <div class="p-5">
@@ -109,28 +187,58 @@ defineExpose({ refresh: load })
         <p class="text-sm text-fg-muted">Aktivitas project akan tercatat di sini.</p>
       </div>
 
-      <ol
-        v-else
-        class="relative flex flex-col gap-5 border-l border-line pl-6 transition-opacity"
-        :class="loading && 'opacity-60'"
-      >
-        <li v-for="log in sortedLogs" :key="log.id" class="relative">
-          <span class="absolute -left-[31px] top-1.5 size-2.5 rounded-full border border-line bg-fg-muted" />
+      <div v-else class="flex flex-col gap-6 transition-opacity" :class="loading && 'opacity-60'">
+        <ol class="flex flex-col">
+          <li v-for="(log, index) in visibleLogs" :key="log.id" class="flex gap-4">
+            <!-- Ikon polos dan garis penghubung -->
+            <div class="flex w-5 shrink-0 flex-col items-center">
+              <i :class="logIcon(log)" class="mt-0.5 text-base text-fg-muted" />
+              <span v-if="index < visibleLogs.length - 1" class="mt-2 w-px flex-1 bg-line" />
+            </div>
 
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span
-              v-if="logAction(log)"
-              class="inline-flex rounded-md bg-sidebar px-2 py-0.5 text-xs font-medium uppercase tracking-wide"
-            >
-              {{ logAction(log) }}
-            </span>
-            <span class="text-xs text-fg-muted">{{ formatDateTime(log.created_at) }}</span>
-          </div>
+            <!-- Isi log -->
+            <div class="min-w-0 flex-1" :class="index < visibleLogs.length - 1 ? 'pb-6' : ''">
+              <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                <p class="text-sm font-semibold">{{ logAction(log) ?? 'Aktivitas' }}</p>
+                <time class="text-xs tabular-nums text-fg-muted" :datetime="log.created_at">
+                  {{ formatTimestamp(log.created_at) }}
+                </time>
+              </div>
 
-          <p v-if="log.deskripsi" class="mt-1 text-sm">{{ log.deskripsi }}</p>
-          <p class="mt-0.5 text-xs text-fg-muted">oleh {{ logUser(log) }}</p>
-        </li>
-      </ol>
+              <ul v-if="parseChanges(log.deskripsi)" class="mt-2 flex flex-col gap-1.5">
+                <li
+                  v-for="change in parseChanges(log.deskripsi)"
+                  :key="change.label"
+                  class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
+                >
+                  <span class="text-fg-muted">{{ change.label }}</span>
+                  <span class="rounded-md border border-line px-1.5 py-0.5 text-xs text-fg-muted line-through">
+                    {{ change.from }}
+                  </span>
+                  <i class="pi pi-arrow-right text-[0.65rem] text-fg-muted" />
+                  <span class="rounded-md border border-line px-1.5 py-0.5 text-xs font-medium">
+                    {{ change.to }}
+                  </span>
+                </li>
+              </ul>
+              <p v-else-if="log.deskripsi" class="mt-1 text-sm leading-relaxed">{{ log.deskripsi }}</p>
+
+              <p class="mt-1.5 text-xs text-fg-muted">oleh {{ logUser(log) }}</p>
+            </div>
+          </li>
+        </ol>
+
+        <div v-if="remaining > 0" class="flex justify-center">
+          <Button
+            :label="`Tampilkan ${Math.min(remaining, PAGE_SIZE)} log lainnya (${remaining} tersisa)`"
+            icon="pi pi-chevron-down"
+            size="small"
+            variant="outlined"
+            severity="secondary"
+            @click="limit += PAGE_SIZE"
+          />
+        </div>
+      </div>
     </div>
   </section>
 </template>
