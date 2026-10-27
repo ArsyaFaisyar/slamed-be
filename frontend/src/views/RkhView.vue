@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
+import MultiSelect from 'primevue/multiselect'
+import Paginator from 'primevue/paginator'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
-import ConfirmDialog from 'primevue/confirmdialog'
 import { useConfirm } from 'primevue/useconfirm'
 
 import RkhFormDialog from '../components/RkhPage/RkhFormDialog.vue'
@@ -22,14 +22,23 @@ import { formatDate } from '../utils/date'
 
 const confirm = useConfirm()
 
+const PAGE_SIZES = [10, 25, 50]
+
 const items = ref<Rkh[]>([])
 const lkhList = ref<Lkh[]>([])
 const customers = ref<Customer[]>([])
 const projects = ref<Project[]>([])
 const users = ref<User[]>([])
 
+// Pencarian, filter (checklist), dan pagination
 const search = ref('')
-const statusFilter = ref<string | null>(null)
+const salesFilter = ref<number[]>([])
+const customerFilter = ref<number[]>([])
+const projectFilter = ref<number[]>([])
+const statusFilter = ref<string[]>([])
+const first = ref(0)
+const rows = ref(PAGE_SIZES[0])
+
 const loading = ref(false)
 const errorMessage = ref('')
 
@@ -110,25 +119,77 @@ function salesName(id: number) {
   return userNameById.value.get(Number(id)) ?? `ID ${id}`
 }
 
-function formatRupiah(value: string | number) {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    maximumFractionDigits: 0,
-  }).format(Number(value))
+/* ---------- Opsi filter (checklist) ---------- */
+
+interface FilterOption {
+  value: number | string
+  label: string
 }
 
-const statusOptions = computed(() =>
-  [...new Set(items.value.map((item) => item.status).filter(Boolean))].map(
-    (status) => ({ label: status, value: status }),
-  ),
+function byLabel(a: FilterOption, b: FilterOption) {
+  return a.label.localeCompare(b.label, 'id')
+}
+
+// Hanya sales, customer, dan project yang benar-benar dipakai di daftar RKH.
+const salesFilterOptions = computed<FilterOption[]>(() =>
+  [...new Set(items.value.map((item) => Number(item.sales_id)))]
+    .map((id) => ({ value: id, label: salesName(id) }))
+    .sort(byLabel),
 )
+
+const customerFilterOptions = computed<FilterOption[]>(() =>
+  [...new Set(items.value.map((item) => Number(item.customer_id)))]
+    .map((id) => ({ value: id, label: customerName(id) }))
+    .sort(byLabel),
+)
+
+// Kalau customer dipilih, pilihan project dipersempit ke project milik customer itu.
+const projectFilterOptions = computed<FilterOption[]>(() => {
+  const customerIds = customerFilter.value
+
+  return [
+    ...new Set(
+      items.value
+        .filter((item) => customerIds.length === 0 || customerIds.includes(Number(item.customer_id)))
+        .map((item) => Number(item.project_id)),
+    ),
+  ]
+    .map((id) => ({ value: id, label: projectName(id) }))
+    .sort(byLabel)
+})
+
+const statusFilterOptions = computed<FilterOption[]>(() =>
+  [...new Set(items.value.map((item) => item.status).filter(Boolean))]
+    .map((status) => ({ value: status, label: status }))
+    .sort(byLabel),
+)
+
+const hasActiveFilters = computed(
+  () =>
+    salesFilter.value.length > 0 ||
+    customerFilter.value.length > 0 ||
+    projectFilter.value.length > 0 ||
+    statusFilter.value.length > 0,
+)
+
+function resetFilters() {
+  salesFilter.value = []
+  customerFilter.value = []
+  projectFilter.value = []
+  statusFilter.value = []
+}
+
+/* ---------- Filter dan pagination ---------- */
 
 const filteredItems = computed(() => {
   const keyword = search.value.trim().toLowerCase()
 
   return items.value.filter((item) => {
-    if (statusFilter.value && item.status !== statusFilter.value) return false
+    if (salesFilter.value.length > 0 && !salesFilter.value.includes(Number(item.sales_id))) return false
+    if (customerFilter.value.length > 0 && !customerFilter.value.includes(Number(item.customer_id))) return false
+    if (projectFilter.value.length > 0 && !projectFilter.value.includes(Number(item.project_id))) return false
+    if (statusFilter.value.length > 0 && !statusFilter.value.includes(item.status)) return false
+
     if (!keyword) return true
 
     return [
@@ -140,6 +201,31 @@ const filteredItems = computed(() => {
     ].some((value) => (value ?? '').toLowerCase().includes(keyword))
   })
 })
+
+const pagedItems = computed(() => filteredItems.value.slice(first.value, first.value + rows.value))
+
+// Pilihan project yang tidak lagi cocok dengan customer terpilih dibuang dari filter.
+watch(customerFilter, () => {
+  const allowed = new Set(projectFilterOptions.value.map((option) => option.value))
+  projectFilter.value = projectFilter.value.filter((id) => allowed.has(id))
+})
+
+// Kembali ke halaman pertama saat pencarian, filter, atau jumlah per halaman berubah.
+watch([search, salesFilter, customerFilter, projectFilter, statusFilter, rows], () => {
+  first.value = 0
+})
+
+// Kalau data berkurang (mis. setelah hapus) dan halaman saat ini jadi kosong, mundur ke halaman terakhir.
+watch(
+  () => filteredItems.value.length,
+  (total) => {
+    if (first.value >= total && total > 0) {
+      first.value = Math.floor((total - 1) / rows.value) * rows.value
+    }
+  },
+)
+
+/* ---------- Aksi dan data ---------- */
 
 function openDetail(item: Rkh) {
   selectedDetailRkh.value = item
@@ -230,7 +316,7 @@ onMounted(fetchItems)
 
     <section class="rounded-xl border border-line bg-card">
       <div
-        class="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between"
+        class="flex flex-col gap-3 border-b border-line p-4 xl:flex-row xl:items-center xl:justify-between"
       >
         <div>
           <h2 class="font-semibold">Daftar RKH</h2>
@@ -240,13 +326,70 @@ onMounted(fetchItems)
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-          <Select
+          <MultiSelect
+            v-model="salesFilter"
+            :options="salesFilterOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua sales"
+            filter
+            filter-placeholder="Cari sales..."
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} sales dipilih"
+            empty-message="Tidak ada sales"
+            empty-filter-message="Sales tidak ditemukan"
+            size="small"
+            class="w-44"
+            aria-label="Filter sales"
+          />
+
+          <MultiSelect
+            v-model="customerFilter"
+            :options="customerFilterOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua customer"
+            filter
+            filter-placeholder="Cari customer..."
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} customer dipilih"
+            empty-message="Tidak ada customer"
+            empty-filter-message="Customer tidak ditemukan"
+            size="small"
+            class="w-48"
+            aria-label="Filter customer"
+          />
+
+          <MultiSelect
+            v-model="projectFilter"
+            :options="projectFilterOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua project"
+            filter
+            filter-placeholder="Cari project..."
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} project dipilih"
+            empty-message="Tidak ada project"
+            empty-filter-message="Project tidak ditemukan"
+            size="small"
+            class="w-48"
+            aria-label="Filter project"
+          />
+
+          <MultiSelect
             v-model="statusFilter"
-            :options="statusOptions"
+            :options="statusFilterOptions"
             option-label="label"
             option-value="value"
             placeholder="Semua status"
-            show-clear
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} status dipilih"
+            empty-message="Tidak ada status"
             size="small"
             class="w-40"
             aria-label="Filter status"
@@ -258,6 +401,17 @@ onMounted(fetchItems)
             aria-label="Cari RKH"
             size="small"
             class="w-40 sm:w-48"
+          />
+
+          <Button
+            v-if="hasActiveFilters"
+            label="Reset filter"
+            icon="pi pi-filter-slash"
+            size="small"
+            variant="text"
+            severity="secondary"
+            class="whitespace-nowrap"
+            @click="resetFilters"
           />
 
           <Button
@@ -285,12 +439,12 @@ onMounted(fetchItems)
         <i class="pi pi-calendar text-3xl text-fg-muted" />
 
         <p class="font-medium">
-          {{ search || statusFilter ? 'RKH tidak ditemukan' : 'Belum ada RKH' }}
+          {{ search || hasActiveFilters ? 'RKH tidak ditemukan' : 'Belum ada RKH' }}
         </p>
 
         <p class="text-sm text-fg-muted">
           {{
-            search || statusFilter
+            search || hasActiveFilters
               ? 'Coba kata kunci atau filter lain.'
               : 'Data RKH akan muncul di sini.'
           }}
@@ -303,71 +457,48 @@ onMounted(fetchItems)
         :class="loading && 'pointer-events-none opacity-60'"
         :aria-busy="loading"
       >
-        <table class="w-full min-w-[1100px] text-left text-sm">
+        <!-- Ringkas: detail lengkap (tipe, estimasi biaya, rencana kegiatan) ada di modal detail -->
+        <table class="w-full min-w-[780px] text-left text-sm">
           <thead class="bg-sidebar text-fg-muted">
             <tr>
-              <th class="px-5 py-3 font-medium">Tanggal</th>
-              <th class="px-5 py-3 font-medium">Kegiatan</th>
-              <th class="px-5 py-3 font-medium">Sales</th>
-              <th class="px-5 py-3 font-medium">Customer</th>
-              <th class="px-5 py-3 font-medium">Project</th>
-              <th class="px-5 py-3 font-medium">Tipe</th>
-              <th class="px-5 py-3 text-right font-medium">Estimasi biaya</th>
-              <th class="px-5 py-3 font-medium">Status</th>
-              <th class="w-36 px-5 py-3 text-center font-medium">Aksi</th>
+              <th class="px-6 py-3.5 font-medium">Tanggal</th>
+              <th class="px-6 py-3.5 font-medium">Kegiatan</th>
+              <th class="px-6 py-3.5 font-medium">Sales</th>
+              <th class="px-6 py-3.5 font-medium">Status</th>
+              <th class="w-36 px-6 py-3.5 text-center font-medium">Aksi</th>
             </tr>
           </thead>
 
           <tbody class="divide-y divide-line">
             <tr
-              v-for="item in filteredItems"
+              v-for="item in pagedItems"
               :key="item.id"
               class="transition-colors hover:bg-sidebar/60"
             >
-              <td class="whitespace-nowrap px-5 py-4">
+              <td class="whitespace-nowrap px-6 py-5 align-top">
                 <div class="font-medium">
                   {{ formatDate(item.tanggal_rencana) }}
                 </div>
                 <div
                   v-if="item.tanggal_pelaksanaan"
-                  class="mt-0.5 text-xs text-fg-muted"
+                  class="mt-1 text-xs text-fg-muted"
                 >
                   Terlaksana {{ formatDate(item.tanggal_pelaksanaan) }}
                 </div>
               </td>
 
-              <td class="max-w-[260px] px-5 py-4">
+              <td class="max-w-[420px] px-6 py-5 align-top">
                 <div class="font-medium">{{ item.judul_kegiatan }}</div>
-                <div class="mt-0.5 line-clamp-1 text-xs text-fg-muted">
-                  {{ item.rencana_kegiatan }}
+                <div class="mt-1 line-clamp-1 text-xs text-fg-muted">
+                  {{ customerName(item.customer_id) }} · {{ projectName(item.project_id) }}
                 </div>
               </td>
 
-              <td class="px-5 py-4 text-fg-muted">
+              <td class="whitespace-nowrap px-6 py-5 align-top text-fg-muted">
                 {{ salesName(item.sales_id) }}
               </td>
 
-              <td class="px-5 py-4">
-                {{ customerName(item.customer_id) }}
-              </td>
-
-              <td class="px-5 py-4 text-fg-muted">
-                {{ projectName(item.project_id) }}
-              </td>
-
-              <td class="px-5 py-4">
-                <span
-                  class="inline-flex whitespace-nowrap rounded-md border border-line px-2.5 py-1 text-xs font-medium"
-                >
-                  {{ item.tipe_aktivitas }}
-                </span>
-              </td>
-
-              <td class="whitespace-nowrap px-5 py-4 text-right tabular-nums">
-                {{ formatRupiah(item.estimasi_biaya_harian) }}
-              </td>
-
-              <td class="px-5 py-4">
+              <td class="px-6 py-5 align-top">
                 <span
                   class="inline-flex rounded-full bg-sidebar px-2.5 py-1 text-xs font-medium capitalize"
                 >
@@ -375,7 +506,7 @@ onMounted(fetchItems)
                 </span>
               </td>
 
-              <td class="px-5 py-4 text-center">
+              <td class="px-6 py-4 text-center align-top">
                 <div class="flex items-center justify-center gap-1">
                   <Button
                     icon="pi pi-eye"
@@ -428,6 +559,17 @@ onMounted(fetchItems)
           </tbody>
         </table>
       </div>
+
+      <Paginator
+        v-if="filteredItems.length > 0"
+        v-model:first="first"
+        v-model:rows="rows"
+        :total-records="filteredItems.length"
+        :rows-per-page-options="PAGE_SIZES"
+        template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown CurrentPageReport"
+        current-page-report-template="{first}–{last} dari {totalRecords}"
+        class="border-t border-line"
+      />
 
       <footer class="border-t border-line px-5 py-3 text-xs text-fg-muted">
         Total {{ items.length }} RKH

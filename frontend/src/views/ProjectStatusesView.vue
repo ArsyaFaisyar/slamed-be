@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
+import Tag from 'primevue/tag'
 import { useConfirm } from 'primevue/useconfirm'
 
 import ProjectStatusFormDialog from '../components/ProjectStatusPage/ProjectStatusFormDialog.vue'
@@ -10,7 +11,6 @@ import ProjectStatusFormDialog from '../components/ProjectStatusPage/ProjectStat
 import {
   deactivateProjectStatus,
   getProjectStatuses,
-  updateProjectStatus,
   type ProjectStatus,
 } from '../api/projectStatuses'
 import { getErrorMessage } from '../utils/error'
@@ -55,7 +55,7 @@ async function fetchStatuses() {
   errorMessage.value = ''
 
   try {
-    statuses.value = await getProjectStatuses()
+    statuses.value = await getProjectStatuses(true)
   } catch (error) {
     errorMessage.value = getErrorMessage(error, 'Gagal memuat daftar status project')
   } finally {
@@ -66,7 +66,7 @@ async function fetchStatuses() {
 function confirmDeactivate(status: ProjectStatus) {
   confirm.require({
     header: 'Nonaktifkan Status',
-    message: `Apakah Anda yakin ingin menonaktifkan status ${status.nama}?`,
+    message: `Status "${status.nama}" akan dinonaktifkan. Status ini masih bisa diaktifkan kembali lewat menu edit. Lanjutkan?`,
     icon: 'pi pi-exclamation-triangle',
     rejectProps: {
       label: 'Batal',
@@ -87,16 +87,6 @@ function confirmDeactivate(status: ProjectStatus) {
       }
     },
   })
-}
-
-async function activate(status: ProjectStatus) {
-  actionError.value = ''
-  try {
-    await updateProjectStatus(status.id, { is_active: true })
-    await fetchStatuses()
-  } catch (error) {
-    actionError.value = getErrorMessage(error, 'Gagal mengaktifkan status')
-  }
 }
 
 onMounted(fetchStatuses)
@@ -181,7 +171,7 @@ onMounted(fetchStatuses)
               <th class="w-24 px-5 py-3 font-medium">Urutan</th>
               <th class="px-5 py-3 font-medium">Status</th>
               <th class="px-5 py-3 font-medium">Warna</th>
-              <th class="px-5 py-3 font-medium">Keaktifan</th>
+              <th class="px-5 py-3 font-medium">Status Aktif</th>
               <th class="px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
           </thead>
@@ -208,20 +198,10 @@ onMounted(fetchStatuses)
               <td class="px-5 py-4 font-mono text-xs text-fg-muted">{{ status.warna || '-' }}</td>
 
               <td class="px-5 py-4">
-                <span
-                  class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
-                  :class="
-                    status.is_active
-                      ? 'bg-green-500/10 text-green-700 dark:text-green-400'
-                      : 'bg-red-500/10 text-red-700 dark:text-red-400'
-                  "
-                >
-                  <span
-                    class="size-1.5 rounded-full"
-                    :class="status.is_active ? 'bg-green-500' : 'bg-red-500'"
-                  />
-                  {{ status.is_active ? 'Aktif' : 'Nonaktif' }}
-                </span>
+                <Tag
+                  :value="status.is_active ? 'Aktif' : 'Nonaktif'"
+                  :severity="status.is_active ? 'success' : 'secondary'"
+                />
               </td>
 
               <td class="px-5 py-4 text-center">
@@ -245,17 +225,6 @@ onMounted(fetchStatuses)
                     aria-label="Nonaktifkan status"
                     v-tooltip.top="'Nonaktifkan status'"
                     @click="confirmDeactivate(status)"
-                  />
-
-                  <Button
-                    v-else
-                    icon="pi pi-replay"
-                    variant="text"
-                    rounded
-                    severity="success"
-                    aria-label="Aktifkan status"
-                    v-tooltip.top="'Aktifkan status'"
-                    @click="activate(status)"
                   />
                 </div>
               </td>

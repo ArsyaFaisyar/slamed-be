@@ -20,8 +20,10 @@ export interface ProjectStatusUpdate extends Partial<ProjectStatusInput> {
   is_active?: boolean;
 }
 
-export async function getProjectStatuses(): Promise<ProjectStatus[]> {
-  const { data } = await http.get<ProjectStatus[]>("/project-statuses");
+export async function getProjectStatuses(includeInactive = false): Promise<ProjectStatus[]> {
+  const { data } = await http.get<ProjectStatus[]>("/project-statuses", {
+    params: { include_inactive: includeInactive },
+  });
   return data;
 }
 

@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
+import MultiSelect from 'primevue/multiselect'
+import Paginator from 'primevue/paginator'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
@@ -26,12 +28,21 @@ import type { UserRole } from '../constant/roles'
 const confirm = useConfirm()
 const auth = useAuthStore()
 
+const PAGE_SIZES = [10, 25, 50]
+
 const customers = ref<Customer[]>([])
 const users = ref<User[]>([])
 const areas = ref<Area[]>([])
 
 const search = ref('')
 const statusFilter = ref<ApprovalStatus | null>(null)
+const areaFilter = ref<number[]>([])
+const salesFilter = ref<number[]>([])
+
+// Pagination
+const first = ref(0)
+const rows = ref(PAGE_SIZES[0])
+
 const loading = ref(false)
 const errorMessage = ref('')
 const actionError = ref('')
@@ -96,11 +107,66 @@ function areaName(customer: Customer) {
   return customer.area_nama ?? '-'
 }
 
+// Opsi filter diambil dari data customer yang bisa dilihat user, jadi tidak butuh akses ke daftar area/user.
+function uniqueOptions(pairs: Array<[number | null, string | null]>, fallbackPrefix: string) {
+  const map = new Map<number, string>()
+
+  for (const [id, name] of pairs) {
+    if (id != null && (name || !map.has(id))) map.set(id, name || `${fallbackPrefix} ${id}`)
+  }
+
+  return [...map]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'id'))
+}
+
+// Semua area/sales yang tersedia (dari daftar area dan user bila boleh diakses), ditambah yang muncul di data customer.
+const areaFilterOptions = computed(() =>
+  uniqueOptions(
+    [
+      ...areas.value.map((area): [number | null, string | null] => [area.id, area.nama]),
+      ...customers.value.map((c): [number | null, string | null] => [c.area_id, c.area_nama]),
+    ],
+    'Area',
+  ),
+)
+
+const salesFilterOptions = computed(() =>
+  uniqueOptions(
+    [
+      ...users.value
+        .filter((user) => user.role === 'SALES')
+        .map((user): [number | null, string | null] => [user.id, user.nama]),
+      ...customers.value.map((c): [number | null, string | null] => [c.sales_id, c.sales_nama]),
+    ],
+    'Sales',
+  ),
+)
+
+const hasActiveFilters = computed(
+  () => !!statusFilter.value || areaFilter.value.length > 0 || salesFilter.value.length > 0,
+)
+
+function resetFilters() {
+  statusFilter.value = null
+  areaFilter.value = []
+  salesFilter.value = []
+}
+
 const filteredCustomers = computed(() => {
   const keyword = search.value.trim().toLowerCase()
 
   return customers.value.filter((customer) => {
     if (statusFilter.value && customer.approval_status !== statusFilter.value) return false
+
+    if (areaFilter.value.length > 0 && !(customer.area_id != null && areaFilter.value.includes(customer.area_id))) {
+      return false
+    }
+
+    if (salesFilter.value.length > 0 && !(customer.sales_id != null && salesFilter.value.includes(customer.sales_id))) {
+      return false
+    }
+
     if (!keyword) return true
 
     return [
@@ -117,6 +183,25 @@ const filteredCustomers = computed(() => {
     )
   })
 })
+
+const pagedCustomers = computed(() =>
+  filteredCustomers.value.slice(first.value, first.value + rows.value),
+)
+
+// Kembali ke halaman pertama saat pencarian atau filter berubah.
+watch([search, statusFilter, areaFilter, salesFilter, rows], () => {
+  first.value = 0
+})
+
+// Kalau data berkurang (mis. setelah hapus) dan halaman saat ini jadi kosong, mundur ke halaman terakhir.
+watch(
+  () => filteredCustomers.value.length,
+  (total) => {
+    if (first.value >= total && total > 0) {
+      first.value = Math.floor((total - 1) / rows.value) * rows.value
+    }
+  },
+)
 
 async function fetchCustomers() {
   loading.value = true
@@ -223,7 +308,7 @@ onMounted(() => {
 
     <section class="rounded-xl border border-line bg-card">
       <div
-        class="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between"
+        class="flex flex-col gap-3 border-b border-line p-4 xl:flex-row xl:items-center xl:justify-between"
       >
         <div>
           <h2 class="font-semibold">Daftar customer</h2>
@@ -233,6 +318,42 @@ onMounted(() => {
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
+          <MultiSelect
+            v-model="areaFilter"
+            :options="areaFilterOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua area"
+            filter
+            filter-placeholder="Cari area..."
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} area dipilih"
+            empty-message="Tidak ada area"
+            empty-filter-message="Area tidak ditemukan"
+            size="small"
+            class="w-44"
+            aria-label="Filter area"
+          />
+
+          <MultiSelect
+            v-model="salesFilter"
+            :options="salesFilterOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua sales"
+            filter
+            filter-placeholder="Cari sales..."
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} sales dipilih"
+            empty-message="Tidak ada sales"
+            empty-filter-message="Sales tidak ditemukan"
+            size="small"
+            class="w-44"
+            aria-label="Filter sales"
+          />
+
           <Select
             v-model="statusFilter"
             :options="statusOptions"
@@ -251,6 +372,17 @@ onMounted(() => {
             aria-label="Cari customer"
             size="small"
             class="w-40 sm:w-48"
+          />
+
+          <Button
+            v-if="hasActiveFilters"
+            label="Reset filter"
+            icon="pi pi-filter-slash"
+            size="small"
+            variant="text"
+            severity="secondary"
+            class="whitespace-nowrap"
+            @click="resetFilters"
           />
 
           <Button
@@ -278,10 +410,10 @@ onMounted(() => {
       >
         <i class="pi pi-users text-3xl text-fg-muted"></i>
         <p class="font-medium">
-          {{ search || statusFilter ? 'Customer tidak ditemukan' : 'Belum ada customer' }}
+          {{ search || hasActiveFilters ? 'Customer tidak ditemukan' : 'Belum ada customer' }}
         </p>
         <p class="text-sm text-fg-muted">
-          {{ search || statusFilter ? 'Coba kata kunci atau filter lain.' : 'Data customer akan muncul di sini.' }}
+          {{ search || hasActiveFilters ? 'Coba kata kunci atau filter lain.' : 'Data customer akan muncul di sini.' }}
         </p>
       </div>
 
@@ -311,7 +443,7 @@ onMounted(() => {
 
           <tbody class="divide-y divide-line">
             <tr
-              v-for="customer in filteredCustomers"
+              v-for="customer in pagedCustomers"
               :key="customer.id"
               class="transition-colors hover:bg-sidebar/60"
             >
@@ -410,6 +542,17 @@ onMounted(() => {
           </tbody>
         </table>
       </div>
+
+      <Paginator
+        v-if="filteredCustomers.length > 0"
+        v-model:first="first"
+        v-model:rows="rows"
+        :total-records="filteredCustomers.length"
+        :rows-per-page-options="PAGE_SIZES"
+        template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown CurrentPageReport"
+        current-page-report-template="{first}–{last} dari {totalRecords}"
+        class="border-t border-line"
+      />
 
       <footer class="border-t border-line px-5 py-3 text-xs text-fg-muted">
         Total {{ customers.length }} customer
