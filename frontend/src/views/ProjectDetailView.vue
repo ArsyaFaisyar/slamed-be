@@ -12,6 +12,7 @@ import Tabs from 'primevue/tabs'
 
 import ProjectLogSection from '../components/ProjectPage/ProjectLogSection.vue'
 import ProjectRabSection from '../components/ProjectPage/ProjectRabSection.vue'
+import ProjectRevisiSection from '../components/ProjectPage/ProjectRevisiSection.vue'
 
 import { getProjects, type Project } from '../api/projects'
 import { getCustomers } from '../api/customers'
@@ -189,6 +190,9 @@ function goBack() {
           <Tab value="rab">
             <span class="flex items-center gap-2"><i class="pi pi-calculator" />RAB</span>
           </Tab>
+          <Tab value="revisi">
+            <span class="flex items-center gap-2"><i class="pi pi-replay" />Revisi</span>
+          </Tab>
         </TabList>
 
         <TabPanels class="bg-transparent! px-0! pb-0!">
@@ -197,6 +201,9 @@ function goBack() {
           </TabPanel>
           <TabPanel value="rab">
             <ProjectRabSection :project-id="project.id" />
+          </TabPanel>
+          <TabPanel value="revisi">
+            <ProjectRevisiSection :project-id="project.id" />
           </TabPanel>
         </TabPanels>
       </Tabs>

@@ -1,4 +1,4 @@
-import { http } from "./http";
+import { http } from "./http.ts";
 
 const PREVIEW_FIELD = "file";
 

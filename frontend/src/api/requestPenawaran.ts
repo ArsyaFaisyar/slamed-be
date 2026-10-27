@@ -173,3 +173,7 @@ export function forgetRequestId(lkhId: number) {
     return;
   }
 }
+
+export async function requestRevisiPenawaran(requestId: number, alasanRevisi: string): Promise<void> {
+  await http.post(`/request-penawaran/${requestId}/revisi`, { alasan_revisi: alasanRevisi });
+}

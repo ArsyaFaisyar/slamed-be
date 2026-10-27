@@ -14,6 +14,7 @@ import RequestPenawaranSummary from '../components/RequestPenawaranPage/RequestP
 import RequestPaguTable from '../components/RequestPenawaranPage/RequestPaguTable.vue'
 import RequestModalTable from '../components/RequestPenawaranPage/RequestModalTable.vue'
 import RequestJualTable from '../components/RequestPenawaranPage/RequestJualTable.vue'
+import RevisiPenawaranSection from '../components/RequestPenawaranPage/RevisiPenawaranSection.vue'
 
 import {
   MODE_PAGU_OPTIONS,
@@ -69,22 +70,17 @@ const deleteTarget = ref<RequestItem | null>(null)
 const deleting = ref(false)
 const deleteError = ref('')
 
-/* ---------- Draft tiap section (form terpisah) ---------- */
-
-// Section pagu
 const selectedMediaId = ref<number | null>(null)
 const selectedBranchId = ref<number | null>(null)
 const modePagu = ref<string | null>(null)
 const paguDraft = ref<Draft>({})
 const totalPaguDraft = ref<number | null>(null)
-const paguTried = ref(false) // validasi baru ditampilkan setelah user mencoba menyimpan
+const paguTried = ref(false)
 
-// Section harga modal
 const selectedPajak = ref<string | null>(null)
 const modalDraft = ref<Draft>({})
 const modalTried = ref(false)
 
-// Section harga jual
 const jualDraft = ref<Draft>({})
 
 function createSectionState() {
@@ -109,8 +105,6 @@ const mediaOptions = computed(() => mediaList.value.map((media) => ({ value: med
 const branchOptions = computed(() =>
   branches.value.map((branch) => ({ value: branch.id, label: `${branch.nama} (${branch.kode})` })),
 )
-
-/* ---------- Helper ---------- */
 
 function buildDraft(field: PriceField): Draft {
   const draft: Draft = {}
@@ -180,8 +174,6 @@ function setTotalPagu(value: number | null) {
   totalPaguDraft.value = value
   markEdited(paguState)
 }
-
-/* ---------- Load ---------- */
 
 async function loadItems(id: number) {
   itemsLoading.value = true
@@ -269,8 +261,6 @@ async function load() {
 
 watch(requestId, load, { immediate: true })
 
-/* ---------- Simpan per section ---------- */
-
 async function runSave(
   state: { saving: boolean; error: string },
   section: Section,
@@ -356,8 +346,6 @@ function saveJual() {
   })
 }
 
-/* ---------- Navigasi & dialog ---------- */
-
 function openAddItem() {
   selectedItem.value = null
   itemDialogVisible.value = true
@@ -386,7 +374,6 @@ async function confirmDelete() {
     await deleteRequestItem(current.id, target.id)
     await Promise.all([loadItems(current.id), refreshRequest()])
 
-    // Buang draft barang yang dihapus, draft barang lain yang belum disimpan dipertahankan.
     for (const draft of [paguDraft, modalDraft, jualDraft]) {
       const next = { ...draft.value }
       delete next[target.id]
@@ -426,7 +413,6 @@ function finish() {
     </Message>
 
     <template v-else-if="request">
-      <!-- Header halaman -->
       <header class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
           <h1 class="text-lg font-semibold">Detail Request Penawaran</h1>
@@ -435,10 +421,14 @@ function finish() {
           </p>
         </div>
 
-        <Button v-if="!isFirstVisit" icon="pi pi-arrow-left" label="Kembali" variant="text" size="small" @click="goBack" />
+        <div class="flex items-center gap-2">
+          <Button v-if="!isFirstVisit" icon="pi pi-arrow-left" label="Kembali" variant="text" size="small" @click="goBack" />
+        </div>
       </header>
 
       <RequestPenawaranSummary :request="request" :item-count="items.length" />
+
+      <RevisiPenawaranSection :request-id="request.id" @changed="refreshRequest" />
 
       <Message v-if="itemsError" severity="error" :closable="false">
         <div class="flex flex-wrap items-center gap-3">
@@ -447,7 +437,6 @@ function finish() {
         </div>
       </Message>
 
-      <!-- ================= FORM 1: PAGU ================= -->
       <form class="flex flex-col gap-4 rounded-xl border border-line bg-card p-5" novalidate @submit.prevent="savePagu">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div class="flex items-center gap-3">
@@ -628,7 +617,6 @@ function finish() {
         </div>
       </form>
 
-      <!-- ================= FORM 3: HARGA JUAL ================= -->
       <form
         v-if="items.length > 0"
         class="flex flex-col gap-4 rounded-xl border border-line bg-card p-5"

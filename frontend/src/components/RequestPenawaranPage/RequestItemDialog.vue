@@ -6,25 +6,16 @@ import InputNumber from 'primevue/inputnumber'
 import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
-import Select from 'primevue/select'
-
 import {
   createRequestItem,
   updateRequestItem,
   type RequestItem,
   type RequestItemInput,
-  type RequestItemUpdate,
+  type RequestItemPriceUpdate,
 } from '../../api/requestPenawaran'
 import { getErrorMessage, getFieldErrors } from '../../utils/error'
 
-const props = defineProps<{
-  requestId: number
-  /** Diisi = mode edit data barang. Kosong = mode tambah barang. */
-  item?: RequestItem | null
-  /** Tidak dipakai lagi di dialog ini (harga diatur lewat tabel), dibiarkan agar parent tidak error. */
-  canEditCost?: boolean
-}>()
-
+const props = defineProps<{ requestId: number; item?: RequestItem | null; canEditCost: boolean }>()
 const visible = defineModel<boolean>('visible', { default: false })
 const emit = defineEmits<{ saved: [] }>()
 
@@ -37,6 +28,9 @@ type Field =
   | 'catatan_sales'
   | 'jumlah'
   | 'satuan'
+  | 'harga_pagu'
+  | 'harga_modal'
+  | 'harga_jual'
 
 const form = reactive({
   nama_barang: '',
@@ -47,32 +41,35 @@ const form = reactive({
   catatan_sales: '',
   jumlah: 1 as number | null,
   satuan: 'Unit',
+  harga_pagu: null as number | null,
+  harga_modal: null as number | null,
+  harga_jual: null as number | null,
 })
-
-const tkdnOptions = [
-  { label: 'TKDN', value: 'TKDN' },
-  { label: 'NON TKDN', value: 'NON TKDN' },
-]
-
-const isTkdn = computed(() => form.tkdn === 'TKDN')
-const isEdit = computed(() => !!props.item)
 
 const submitted = ref(false)
 const saving = ref(false)
 const formError = ref('')
 const serverErrors = ref<Record<string, string>>({})
 
+const isPriceMode = computed(() => !!props.item)
+
 const clientErrors = computed<Partial<Record<Field, string>>>(() => ({
-  nama_barang: form.nama_barang.trim() ? '' : 'Nama barang wajib diisi',
-  jumlah: form.jumlah !== null && form.jumlah > 0 ? '' : 'Jumlah minimal 1',
-  satuan: form.satuan.trim() ? '' : 'Satuan wajib diisi',
+  nama_barang: isPriceMode.value || form.nama_barang.trim() ? '' : 'Nama barang wajib diisi',
+  jumlah: isPriceMode.value || (form.jumlah !== null && form.jumlah > 0) ? '' : 'Jumlah minimal 1',
+  satuan: isPriceMode.value || form.satuan.trim() ? '' : 'Satuan wajib diisi',
   tkdn_persen:
-    isTkdn.value && form.tkdn_persen !== null && (form.tkdn_persen < 0 || form.tkdn_persen > 100)
-      ? 'Persentase TKDN harus antara 0 sampai 100'
-      : '',
+    form.tkdn_persen !== null && (form.tkdn_persen < 0 || form.tkdn_persen > 100) ? 'Persentase 0 sampai 100' : '',
 }))
 
 const hasClientErrors = computed(() => Object.values(clientErrors.value).some(Boolean))
+
+function limitPersen(event: { value?: number | string | null; originalEvent: Event }) {
+  const value = typeof event.value === 'number' ? event.value : null
+  if (value === null || value <= 100) return
+  form.tkdn_persen = 100
+  const target = event.originalEvent?.target as HTMLInputElement | null
+  if (target) target.value = '100'
+}
 
 function fieldError(field: Field) {
   return serverErrors.value[field] || (submitted.value ? clientErrors.value[field] : '') || ''
@@ -80,21 +77,9 @@ function fieldError(field: Field) {
 
 function toNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return null
-
   const number = Number(value)
   return Number.isNaN(number) ? null : number
 }
-
-// Jika status bukan TKDN, persentase harus dikosongkan.
-watch(
-  () => form.tkdn,
-  (value) => {
-    if (value !== 'TKDN') {
-      form.tkdn_persen = null
-      delete serverErrors.value.tkdn_persen
-    }
-  },
-)
 
 watch(visible, (value) => {
   if (!value) return
@@ -107,12 +92,9 @@ watch(visible, (value) => {
   form.catatan_sales = props.item?.catatan_sales ?? ''
   form.jumlah = props.item ? toNumber(props.item.jumlah) : 1
   form.satuan = props.item?.satuan ?? 'Unit'
-
-  // Hindari mempertahankan persentase jika status bukan TKDN.
-  if (form.tkdn !== 'TKDN') {
-    form.tkdn_persen = null
-  }
-
+  form.harga_pagu = toNumber(props.item?.harga_pagu)
+  form.harga_modal = toNumber(props.item?.harga_modal)
+  form.harga_jual = toNumber(props.item?.harga_jual)
   submitted.value = false
   formError.value = ''
   serverErrors.value = {}
@@ -127,49 +109,27 @@ function buildCreatePayload(): RequestItemInput {
 
   if (form.merk.trim()) payload.merk = form.merk.trim()
   if (form.tkdn.trim()) payload.tkdn = form.tkdn.trim()
-
-  // Kirim persentase hanya jika statusnya TKDN.
-  if (isTkdn.value && form.tkdn_persen !== null) payload.tkdn_persen = form.tkdn_persen
-
+  if (form.tkdn_persen !== null) payload.tkdn_persen = form.tkdn_persen
   if (form.spesifikasi.trim()) payload.spesifikasi = form.spesifikasi.trim()
   if (form.catatan_sales.trim()) payload.catatan_sales = form.catatan_sales.trim()
 
   return payload
 }
 
-// Hanya kirim field yang berubah. Field teks yang dikosongkan dikirim sebagai null.
-function buildUpdatePayload(item: RequestItem): RequestItemUpdate {
-  const payload: RequestItemUpdate = {}
+function buildPricePayload(item: RequestItem): RequestItemPriceUpdate {
+  const payload: RequestItemPriceUpdate = {}
 
-  const nama = form.nama_barang.trim()
-  if (nama !== item.nama_barang) payload.nama_barang = nama
-
-  const merk = form.merk.trim() || null
-  if (merk !== (item.merk || null)) payload.merk = merk
-
-  const tkdn = form.tkdn.trim() || null
-  if (tkdn !== (item.tkdn || null)) payload.tkdn = tkdn
-
-  const persen = isTkdn.value ? form.tkdn_persen : null
-  if (persen !== toNumber(item.tkdn_persen)) payload.tkdn_persen = persen
-
-  const spesifikasi = form.spesifikasi.trim() || null
-  if (spesifikasi !== (item.spesifikasi || null)) payload.spesifikasi = spesifikasi
-
-  const catatan = form.catatan_sales.trim() || null
-  if (catatan !== (item.catatan_sales || null)) payload.catatan_sales = catatan
-
-  if (form.jumlah !== toNumber(item.jumlah)) payload.jumlah = form.jumlah as number
-
-  const satuan = form.satuan.trim()
-  if (satuan !== item.satuan) payload.satuan = satuan
+  if (form.harga_pagu !== toNumber(item.harga_pagu)) payload.harga_pagu = form.harga_pagu
+  if (props.canEditCost) {
+    if (form.harga_modal !== toNumber(item.harga_modal)) payload.harga_modal = form.harga_modal
+    if (form.harga_jual !== toNumber(item.harga_jual)) payload.harga_jual = form.harga_jual
+  }
 
   return payload
 }
 
 async function onSubmit() {
   submitted.value = true
-
   if (hasClientErrors.value) return
 
   saving.value = true
@@ -178,15 +138,8 @@ async function onSubmit() {
 
   try {
     if (props.item) {
-      const payload = buildUpdatePayload(props.item)
-
-      if (Object.keys(payload).length > 0) {
-        await updateRequestItem(
-          props.requestId,
-          props.item.id,
-          payload as unknown as Parameters<typeof updateRequestItem>[2],
-        )
-      }
+      const payload = buildPricePayload(props.item)
+      if (Object.keys(payload).length > 0) await updateRequestItem(props.requestId, props.item.id, payload)
     } else {
       await createRequestItem(props.requestId, buildCreatePayload())
     }
@@ -196,7 +149,6 @@ async function onSubmit() {
   } catch (error) {
     const errors = getFieldErrors(error)
     serverErrors.value = errors
-
     if (Object.keys(errors).length === 0) {
       formError.value = getErrorMessage(error, 'Gagal menyimpan barang')
     }
@@ -210,29 +162,87 @@ async function onSubmit() {
   <Dialog
     v-model:visible="visible"
     modal
-    :header="isEdit ? 'Ubah barang' : 'Tambah barang'"
+    :header="isPriceMode ? 'Ubah harga barang' : 'Tambah barang'"
     class="w-[calc(100vw-2rem)] max-w-2xl"
     :draggable="false"
     :closable="!saving"
     :close-on-escape="!saving"
   >
     <form id="request-item-form" class="flex flex-col gap-4" novalidate @submit.prevent="onSubmit">
-      <Message v-if="formError" severity="error" size="small">
-        {{ formError }}
-      </Message>
+      <Message v-if="formError" severity="error" size="small">{{ formError }}</Message>
 
-      <div class="grid gap-4 sm:grid-cols-2">
+      <template v-if="isPriceMode">
+        <div class="rounded-lg border border-line bg-sidebar/50 p-3">
+          <p class="text-sm font-medium">{{ item?.nama_barang }}</p>
+          <p class="mt-0.5 text-xs text-fg-muted">{{ item?.jumlah }} {{ item?.satuan }}</p>
+        </div>
+
+        <div class="grid gap-4 sm:grid-cols-3">
+          <div class="flex flex-col gap-1.5">
+            <label for="item-pagu" class="text-sm font-medium">Harga pagu</label>
+            <InputNumber
+              v-model="form.harga_pagu"
+              input-id="item-pagu"
+              mode="currency"
+              currency="IDR"
+              locale="id-ID"
+              :max-fraction-digits="0"
+              fluid
+              :invalid="!!fieldError('harga_pagu')"
+            />
+            <Message v-if="fieldError('harga_pagu')" severity="error" size="small" variant="simple">
+              {{ fieldError('harga_pagu') }}
+            </Message>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <label for="item-modal" class="text-sm font-medium">Harga modal</label>
+            <InputNumber
+              v-model="form.harga_modal"
+              input-id="item-modal"
+              mode="currency"
+              currency="IDR"
+              locale="id-ID"
+              :max-fraction-digits="0"
+              fluid
+              :disabled="!canEditCost"
+              :invalid="!!fieldError('harga_modal')"
+            />
+            <Message v-if="fieldError('harga_modal')" severity="error" size="small" variant="simple">
+              {{ fieldError('harga_modal') }}
+            </Message>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <label for="item-jual" class="text-sm font-medium">Harga jual</label>
+            <InputNumber
+              v-model="form.harga_jual"
+              input-id="item-jual"
+              mode="currency"
+              currency="IDR"
+              locale="id-ID"
+              :max-fraction-digits="0"
+              fluid
+              :disabled="!canEditCost"
+              :invalid="!!fieldError('harga_jual')"
+            />
+            <Message v-if="fieldError('harga_jual')" severity="error" size="small" variant="simple">
+              {{ fieldError('harga_jual') }}
+            </Message>
+          </div>
+        </div>
+
+        <p v-if="!canEditCost" class="text-xs text-fg-muted">
+          Harga modal dan harga jual diisi oleh role yang berwenang.
+        </p>
+      </template>
+
+      <div v-else class="grid gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5 sm:col-span-2">
           <label for="item-nama" class="text-sm font-medium">
             Nama barang <span class="text-red-500">*</span>
           </label>
-          <InputText
-            id="item-nama"
-            v-model="form.nama_barang"
-            autocomplete="off"
-            fluid
-            :invalid="!!fieldError('nama_barang')"
-          />
+          <InputText id="item-nama" v-model="form.nama_barang" autocomplete="off" fluid :invalid="!!fieldError('nama_barang')" />
           <Message v-if="fieldError('nama_barang')" severity="error" size="small" variant="simple">
             {{ fieldError('nama_barang') }}
           </Message>
@@ -240,55 +250,35 @@ async function onSubmit() {
 
         <div class="flex flex-col gap-1.5">
           <label for="item-merk" class="text-sm font-medium">Merk</label>
-          <InputText
-            id="item-merk"
-            v-model="form.merk"
-            autocomplete="off"
-            fluid
-            :invalid="!!fieldError('merk')"
-          />
+          <InputText id="item-merk" v-model="form.merk" autocomplete="off" fluid :invalid="!!fieldError('merk')" />
           <Message v-if="fieldError('merk')" severity="error" size="small" variant="simple">
             {{ fieldError('merk') }}
           </Message>
         </div>
 
-        <!-- Status TKDN dan persentase -->
-        <div class="grid gap-4" :class="isTkdn ? 'sm:grid-cols-2' : 'sm:grid-cols-1'">
-          <div class="flex flex-col gap-1.5" :class="!isTkdn ? 'sm:col-span-2' : ''">
-            <label for="item-tkdn" class="text-sm font-medium">Status TKDN</label>
-
-            <Select
-              id="item-tkdn"
-              v-model="form.tkdn"
-              :options="tkdnOptions"
-              option-label="label"
-              option-value="value"
-              placeholder="Pilih status TKDN"
-              fluid
-              :invalid="!!fieldError('tkdn')"
-            />
-
+        <div class="grid grid-cols-2 gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label for="item-tkdn" class="text-sm font-medium">TKDN</label>
+            <InputText id="item-tkdn" v-model="form.tkdn" autocomplete="off" fluid :invalid="!!fieldError('tkdn')" />
             <Message v-if="fieldError('tkdn')" severity="error" size="small" variant="simple">
               {{ fieldError('tkdn') }}
             </Message>
           </div>
 
-          <div v-if="isTkdn" class="flex flex-col gap-1.5">
-            <label for="item-tkdn-persen" class="text-sm font-medium">Nilai TKDN (%)</label>
-
+          <div class="flex flex-col gap-1.5">
+            <label for="item-tkdn-persen" class="text-sm font-medium">TKDN (%)</label>
             <InputNumber
               v-model="form.tkdn_persen"
               input-id="item-tkdn-persen"
-              suffix=" %"
-              placeholder="Masukkan persentase"
               :min="0"
               :max="100"
-              :min-fraction-digits="0"
               :max-fraction-digits="2"
+              :use-grouping="false"
+              :maxlength="8"
               fluid
               :invalid="!!fieldError('tkdn_persen')"
+              @input="limitPersen"
             />
-
             <Message v-if="fieldError('tkdn_persen')" severity="error" size="small" variant="simple">
               {{ fieldError('tkdn_persen') }}
             </Message>
@@ -316,13 +306,7 @@ async function onSubmit() {
           <label for="item-satuan" class="text-sm font-medium">
             Satuan <span class="text-red-500">*</span>
           </label>
-          <InputText
-            id="item-satuan"
-            v-model="form.satuan"
-            autocomplete="off"
-            fluid
-            :invalid="!!fieldError('satuan')"
-          />
+          <InputText id="item-satuan" v-model="form.satuan" autocomplete="off" fluid :invalid="!!fieldError('satuan')" />
           <Message v-if="fieldError('satuan')" severity="error" size="small" variant="simple">
             {{ fieldError('satuan') }}
           </Message>
@@ -330,14 +314,7 @@ async function onSubmit() {
 
         <div class="flex flex-col gap-1.5 sm:col-span-2">
           <label for="item-spesifikasi" class="text-sm font-medium">Spesifikasi</label>
-          <Textarea
-            id="item-spesifikasi"
-            v-model="form.spesifikasi"
-            rows="3"
-            auto-resize
-            fluid
-            :invalid="!!fieldError('spesifikasi')"
-          />
+          <Textarea id="item-spesifikasi" v-model="form.spesifikasi" rows="3" auto-resize fluid :invalid="!!fieldError('spesifikasi')" />
           <Message v-if="fieldError('spesifikasi')" severity="error" size="small" variant="simple">
             {{ fieldError('spesifikasi') }}
           </Message>
@@ -345,14 +322,7 @@ async function onSubmit() {
 
         <div class="flex flex-col gap-1.5 sm:col-span-2">
           <label for="item-catatan" class="text-sm font-medium">Catatan sales</label>
-          <Textarea
-            id="item-catatan"
-            v-model="form.catatan_sales"
-            rows="2"
-            auto-resize
-            fluid
-            :invalid="!!fieldError('catatan_sales')"
-          />
+          <Textarea id="item-catatan" v-model="form.catatan_sales" rows="2" auto-resize fluid :invalid="!!fieldError('catatan_sales')" />
           <Message v-if="fieldError('catatan_sales')" severity="error" size="small" variant="simple">
             {{ fieldError('catatan_sales') }}
           </Message>

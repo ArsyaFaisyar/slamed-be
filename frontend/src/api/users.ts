@@ -12,6 +12,11 @@ export interface User {
   area_id: number | null;
 }
 
+export interface UserOption {
+  id: number;
+  nama: string;
+}
+
 export interface CreateUserPayload {
   nama: string;
   username: string;
@@ -33,6 +38,11 @@ export interface UpdateUserPayload {
 
 export async function getUsers(): Promise<User[]> {
   const { data } = await http.get<User[]>("/users/");
+  return data;
+}
+
+export async function getUserOptions(): Promise<UserOption[]> {
+  const { data } = await http.get<UserOption[]>("/users/options");
   return data;
 }
 

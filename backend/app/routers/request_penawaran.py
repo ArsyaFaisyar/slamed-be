@@ -521,20 +521,32 @@ def minta_revisi_penawaran(
                 detail="Revisi sudah disetujui. Permintaan revisi tidak dapat dilakukan lagi.",
             )
 
-        if revisi_terakhir.status_revisi in ("DIMINTA", "DIKIRIM"):
+        if revisi_terakhir.status_revisi == "DIMINTA":
             raise HTTPException(
                 status_code=400,
-                detail="Masih ada proses revisi yang belum selesai.",
+                detail="Revisi masih menunggu perbaikan Sales.",
             )
-    
-    items = (
-        db.query(RequestPenawaranItem)
-        .filter(
-            RequestPenawaranItem.request_penawaran_id == request_id
+
+        if revisi_terakhir.status_revisi == "DIKIRIM":
+            revisi_terakhir.status_revisi = "DITOLAK"
+
+        items = (
+            db.query(RevisiPenawaranItem)
+            .filter(
+                RevisiPenawaranItem.revisi_penawaran_id == revisi_terakhir.id
+            )
+            .order_by(RevisiPenawaranItem.id.asc())
+            .all()
         )
-        .order_by(RequestPenawaranItem.id.asc())
-        .all()
-    )
+    else:
+        items = (
+            db.query(RequestPenawaranItem)
+            .filter(
+                RequestPenawaranItem.request_penawaran_id == request_id
+            )
+            .order_by(RequestPenawaranItem.id.asc())
+            .all()
+        )
     nomor_revisi = (
         db.query(RevisiPenawaran)
         .filter(
@@ -864,7 +876,7 @@ def get_riwayat_revisi_penawaran(
     revisi_dikirim = sum(
         1
         for revisi in revisi_list
-        if revisi.status_revisi in ("DIKIRIM", "SELESAI")
+        if revisi.status_revisi in ("DIKIRIM", "SELESAI", "DITOLAK")
     )
     return {
         "request_penawaran_id": request.id,
