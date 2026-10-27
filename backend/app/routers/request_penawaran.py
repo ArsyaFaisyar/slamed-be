@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel, Field
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.roles import REQUEST_EDIT_ROLES, REQUEST_VIEW_ROLES
@@ -22,6 +23,9 @@ from app.schemas.request_penawaran import (
     RequestPenawaranItemUpdate,
     RequestPenawaranItemResponse,
 )
+from app.schemas.revisi_penawaran import RevisiPenawaranUpdate
+from app.models.revisi_penawaran import RevisiPenawaran
+from app.models.revisi_penawaran_item import RevisiPenawaranItem
 from app.models.media_pengadaan import MediaPengadaan
 from datetime import datetime, timezone
 from app.utils.project_log import catat_project_log
@@ -468,3 +472,440 @@ def delete_item(
             status_code=500,
             detail="Terjadi kesalahan saat menghapus item.",
         )
+
+class RevisiPenawaranCreate(BaseModel):
+    alasan_revisi: str = Field(min_length=1)
+
+@router.post("/{request_id}/revisi", status_code=201)
+def minta_revisi_penawaran(
+    request_id: int,
+    data: RevisiPenawaranCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "SPV":
+        raise HTTPException(
+            status_code=403,
+            detail="Hanya SPV yang dapat meminta revisi penawaran",
+        )
+    alasan = data.alasan_revisi.strip()
+    if not alasan:
+        raise HTTPException(
+            status_code=422,
+            detail="Alasan revisi wajib diisi",
+        )
+    request = (
+        db.query(RequestPenawaran)
+        .filter(RequestPenawaran.id == request_id)
+        .first()
+    )
+    if not request:
+        raise HTTPException(
+            status_code=404,
+            detail="Request Penawaran tidak ditemukan",
+        )
+
+    revisi_terakhir = (
+        db.query(RevisiPenawaran)
+        .filter(
+            RevisiPenawaran.request_penawaran_id == request_id
+        )
+        .order_by(RevisiPenawaran.nomor_revisi.desc())
+        .first()
+    )
+
+    if revisi_terakhir:
+        if revisi_terakhir.status_revisi == "SELESAI":
+            raise HTTPException(
+                status_code=400,
+                detail="Revisi sudah disetujui. Permintaan revisi tidak dapat dilakukan lagi.",
+            )
+
+        if revisi_terakhir.status_revisi in ("DIMINTA", "DIKIRIM"):
+            raise HTTPException(
+                status_code=400,
+                detail="Masih ada proses revisi yang belum selesai.",
+            )
+    
+    items = (
+        db.query(RequestPenawaranItem)
+        .filter(
+            RequestPenawaranItem.request_penawaran_id == request_id
+        )
+        .order_by(RequestPenawaranItem.id.asc())
+        .all()
+    )
+    nomor_revisi = (
+        db.query(RevisiPenawaran)
+        .filter(
+            RevisiPenawaran.request_penawaran_id == request_id
+        )
+        .count()
+        + 1
+    )
+    revisi = RevisiPenawaran(
+        request_penawaran_id=request_id,
+        nomor_revisi=nomor_revisi,
+        alasan_revisi=alasan,
+        status_revisi="DIMINTA",
+        diminta_oleh=current_user.id,
+    )
+    db.add(revisi)
+    db.flush()
+    for item in items:
+        db.add(
+            RevisiPenawaranItem(
+                revisi_penawaran_id=revisi.id,
+                nama_barang=item.nama_barang,
+                merk=item.merk,
+                tkdn=item.tkdn,
+                tkdn_persen=item.tkdn_persen,
+                spesifikasi=item.spesifikasi,
+                catatan_sales=item.catatan_sales,
+                jumlah=item.jumlah,
+                satuan=item.satuan,
+                harga_pagu=item.harga_pagu,
+                harga_modal=item.harga_modal,
+                harga_jual=item.harga_jual,
+            )
+        )
+    request.status_request = "REVISI"
+    try:
+        db.commit()
+        db.refresh(revisi)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Gagal menyimpan permintaan revisi",
+        )
+    return {
+        "message": "Permintaan revisi berhasil dibuat",
+        "request_penawaran_id": request_id,
+        "revisi_id": revisi.id,
+        "nomor_revisi": revisi.nomor_revisi,
+        "alasan_revisi": revisi.alasan_revisi,
+        "status_revisi": revisi.status_revisi,
+    }
+
+
+@router.get("/{request_id}/revisi/{revisi_id}")
+def detail_revisi_penawaran(
+    request_id: int,
+    revisi_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    revisi = (
+        db.query(RevisiPenawaran)
+        .filter(
+            RevisiPenawaran.id == revisi_id,
+            RevisiPenawaran.request_penawaran_id == request_id,
+        )
+        .first()
+    )
+    if not revisi:
+        raise HTTPException(
+            status_code=404,
+            detail="Revisi penawaran tidak ditemukan",
+        )
+    get_request_access(
+        db=db,
+        request_id=request_id,
+        user=current_user,
+    )
+    items = (
+        db.query(RevisiPenawaranItem)
+        .filter(
+            RevisiPenawaranItem.revisi_penawaran_id == revisi.id
+        )
+        .order_by(RevisiPenawaranItem.id.asc())
+        .all()
+    )
+    return {
+        "id": revisi.id,
+        "request_penawaran_id": revisi.request_penawaran_id,
+        "nomor_revisi": revisi.nomor_revisi,
+        "alasan_revisi": revisi.alasan_revisi,
+        "catatan_sales": revisi.catatan_sales,
+        "status_revisi": revisi.status_revisi,
+        "tanggal_diminta": revisi.tanggal_diminta,
+        "items": [
+            {
+                "id": item.id,
+                "nama_barang": item.nama_barang,
+                "merk": item.merk,
+                "tkdn": item.tkdn,
+                "tkdn_persen": item.tkdn_persen,
+                "spesifikasi": item.spesifikasi,
+                "catatan_sales": item.catatan_sales,
+                "jumlah": item.jumlah,
+                "satuan": item.satuan,
+                "harga_pagu": item.harga_pagu,
+                "harga_modal": item.harga_modal,
+                "harga_jual": item.harga_jual,
+            }
+            for item in items
+        ],
+    }
+
+
+@router.put("/{request_id}/revisi/{revisi_id}")
+def update_revisi_penawaran(
+    request_id: int,
+    revisi_id: int,
+    data: RevisiPenawaranUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "SALES":
+        raise HTTPException(
+            status_code=403,
+            detail="Hanya Sales yang dapat mengedit revisi",
+        )
+    revisi = (
+        db.query(RevisiPenawaran)
+        .filter(
+            RevisiPenawaran.id == revisi_id,
+            RevisiPenawaran.request_penawaran_id == request_id,
+        )
+        .first()
+    )
+    if not revisi:
+        raise HTTPException(
+            status_code=404,
+            detail="Revisi penawaran tidak ditemukan",
+        )
+    if revisi.status_revisi != "DIMINTA":
+        raise HTTPException(
+            status_code=400,
+            detail="Revisi ini tidak sedang menunggu perbaikan Sales",
+        )
+
+    get_request_access(
+        db=db,
+        request_id=request_id,
+        user=current_user,
+        write=True,
+    )
+    items = (
+        db.query(RevisiPenawaranItem)
+        .filter(
+            RevisiPenawaranItem.revisi_penawaran_id == revisi.id
+        )
+        .all()
+    )
+    item_map = {item.id: item for item in items}
+    submitted_ids = {item.id for item in data.items}
+    if submitted_ids != set(item_map.keys()):
+        raise HTTPException(
+            status_code=400,
+            detail="Daftar barang harus memuat semua ID barang revisi yang tersedia",
+        )
+    try:
+        revisi.catatan_sales = data.catatan_sales
+
+        for item_data in data.items:
+            item = item_map[item_data.id]
+            values = item_data.model_dump(exclude={"id"})
+
+            for field, value in values.items():
+                setattr(item, field, value)
+
+        db.commit()
+        db.refresh(revisi)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Gagal menyimpan perubahan revisi",
+        )
+    return {
+        "message": "Perubahan revisi berhasil disimpan",
+        "revisi_id": revisi.id,
+        "status_revisi": revisi.status_revisi,
+    }
+
+@router.post("/{request_id}/revisi/{revisi_id}/submit")
+def submit_revisi_penawaran(
+    request_id: int,
+    revisi_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "SALES":
+        raise HTTPException(
+            status_code=403,
+            detail="Hanya Sales yang dapat mengirim revisi",
+        )
+    request = get_request_access(
+        db=db,
+        request_id=request_id,
+        user=current_user,
+        write=True,
+    )
+    revisi = (
+        db.query(RevisiPenawaran)
+        .filter(
+            RevisiPenawaran.id == revisi_id,
+            RevisiPenawaran.request_penawaran_id == request.id,
+        )
+        .first()
+    )
+    if not revisi:
+        raise HTTPException(
+            status_code=404,
+            detail="Revisi penawaran tidak ditemukan",
+        )
+    if revisi.status_revisi != "DIMINTA":
+        raise HTTPException(
+            status_code=400,
+            detail="Revisi ini tidak dapat dikirim",
+        )
+
+    revisi.status_revisi = "DIKIRIM"
+    revisi.dikirim_oleh = current_user.id
+    revisi.tanggal_dikirim = datetime.now(timezone.utc)
+
+    try:
+        db.commit()
+        db.refresh(revisi)
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Gagal mengirim revisi penawaran",
+        )
+    return {
+        "message": "Revisi penawaran berhasil dikirim ke SPV",
+        "revisi_id": revisi.id,
+        "status_revisi": revisi.status_revisi,
+    }
+
+
+@router.post("/{request_id}/revisi/{revisi_id}/approve")
+def approve_revisi_penawaran(
+    request_id: int,
+    revisi_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "SPV":
+        raise HTTPException(
+            status_code=403,
+            detail="Hanya SPV yang dapat menyetujui revisi",
+        )
+    request = get_request_access(
+        db=db,
+        request_id=request_id,
+        user=current_user,
+        write=True,
+    )
+    revisi = (
+        db.query(RevisiPenawaran)
+        .filter(
+            RevisiPenawaran.id == revisi_id,
+            RevisiPenawaran.request_penawaran_id == request.id,
+        )
+        .first()
+    )
+
+    if not revisi:
+        raise HTTPException(
+            status_code=404,
+            detail="Revisi penawaran tidak ditemukan",
+        )
+
+    if revisi.status_revisi != "DIKIRIM":
+        raise HTTPException(
+            status_code=400,
+            detail="Hanya revisi yang sudah dikirim Sales yang dapat disetujui",
+        )
+
+    revisi.status_revisi = "SELESAI"
+    revisi.disetujui_oleh = current_user.id
+    revisi.tanggal_disetujui = datetime.now(timezone.utc)
+
+    try:
+        db.commit()
+        db.refresh(revisi)
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Gagal menyetujui revisi penawaran",
+        )
+
+    return {
+        "message": "Revisi penawaran berhasil disetujui",
+        "revisi_id": revisi.id,
+        "status_revisi": revisi.status_revisi,
+    }
+
+@router.get("/{request_id}/revisi")
+def get_riwayat_revisi_penawaran(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    request = get_request_access(
+        db=db,
+        request_id=request_id,
+        user=current_user,
+    )
+    revisi_list = (
+        db.query(RevisiPenawaran)
+        .filter(
+            RevisiPenawaran.request_penawaran_id == request.id
+        )
+        .order_by(RevisiPenawaran.nomor_revisi.asc())
+        .all()
+    )
+    revisi_dikirim = sum(
+        1
+        for revisi in revisi_list
+        if revisi.status_revisi in ("DIKIRIM", "SELESAI")
+    )
+    return {
+        "request_penawaran_id": request.id,
+        "total_revisi_dikirim": revisi_dikirim,
+        "total_riwayat": len(revisi_list),
+        "riwayat": [
+            {
+                "id": revisi.id,
+                "nomor_revisi": revisi.nomor_revisi,
+                "alasan_revisi": revisi.alasan_revisi,
+                "catatan_sales": revisi.catatan_sales,
+                "status_revisi": revisi.status_revisi,
+                "diminta_oleh": revisi.diminta_oleh,
+                "dikirim_oleh": revisi.dikirim_oleh,
+                "disetujui_oleh": revisi.disetujui_oleh,
+                "tanggal_diminta": revisi.tanggal_diminta,
+                "tanggal_dikirim": revisi.tanggal_dikirim,
+                "tanggal_disetujui": revisi.tanggal_disetujui,
+                "items": [
+                    {
+                        "id": item.id,
+                        "nama_barang": item.nama_barang,
+                        "merk": item.merk,
+                        "spesifikasi": item.spesifikasi,
+                        "jumlah": item.jumlah,
+                        "satuan": item.satuan,
+                        "harga_pagu": item.harga_pagu,
+                        "harga_modal": item.harga_modal,
+                        "harga_jual": item.harga_jual,
+                        "catatan_sales": item.catatan_sales,
+                    }
+                    for item in (
+                        db.query(RevisiPenawaranItem)
+                        .filter(
+                            RevisiPenawaranItem.revisi_penawaran_id
+                            == revisi.id
+                        )
+                        .all()
+                    )
+                ],
+            }
+            for revisi in revisi_list
+        ],
+    }
