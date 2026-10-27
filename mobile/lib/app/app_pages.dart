@@ -82,14 +82,15 @@ abstract final class AppPages {
       name: AppRoutes.lkhForm,
       page: () => const LkhFormPage(),
       middlewares: [AuthMiddleware()],
-      binding: BindingsBuilder(() => Get.lazyPut(() => LkhFormController(Get.find<LkhRepository>()))),
+      binding: BindingsBuilder(
+        () => Get.lazyPut(() => LkhFormController(Get.find<LkhRepository>(), Get.find<ProjectRepository>())),
+      ),
     ),
     GetPage(
       name: AppRoutes.lkhDetail,
       page: () => const LkhDetailPage(),
       middlewares: [AuthMiddleware()],
-      binding: BindingsBuilder(() => Get.lazyPut(() => LkhDetailController(Get.find<LkhRepository>()))),
-    ),
+      binding: BindingsBuilder(() => Get.lazyPut(() => LkhDetailController(Get.find<LkhRepository>(), Get.find<AuthController>(), Get.find<ProjectRepository>()))),    ),
     GetPage(
       name: AppRoutes.customerForm,
       page: () => const CustomerFormPage(),

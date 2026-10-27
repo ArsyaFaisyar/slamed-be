@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:slamed_app/core/theme/app_colors.dart';
+import 'package:slamed_app/core/utils/color_utils.dart';
 import 'package:slamed_app/core/utils/date_format.dart';
 import 'package:slamed_app/features/lkh/presentation/controller/lkh_detail_controller.dart';
+import 'package:slamed_app/features/project/domain/status_color.dart';
 import 'package:slamed_app/shared/widgets/app_card.dart';
 import 'package:slamed_app/shared/widgets/app_scaffold.dart';
 import 'package:slamed_app/shared/widgets/edit_bar.dart';
@@ -26,8 +28,8 @@ class LkhDetailPage extends GetView<LkhDetailController> {
       return AppScaffold(
         title: editing ? 'Ubah LKH' : 'Detail LKH',
         actions: [
-          if (!editing) ...[
-            IconButton(onPressed: working ? null : c.startEdit, tooltip: 'Ubah', icon: const Icon(Icons.edit_outlined)),
+          if (!editing && c.canEdit) ...[
+            IconButton(onPressed: working ? null : c.requestEdit, tooltip: 'Ubah', icon: const Icon(Icons.edit_outlined)),
             // Hapus hanya untuk LKH yang belum selesai.
             if (!isDone)
               IconButton(onPressed: working ? null : c.remove, tooltip: 'Hapus', icon: const Icon(Icons.delete_outline_rounded)),
@@ -35,16 +37,16 @@ class LkhDetailPage extends GetView<LkhDetailController> {
         ],
         bottomBar: editing
             ? EditBar(busy: c.busy.value, onCancel: c.cancelEdit, onSave: c.save)
-            : isDone
+            : (isDone || !c.canEdit)
                 ? null
                 : SafeArea(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                       child: PrimaryButton(
-                        label: 'Lengkapi foto',
-                        icon: Icons.photo_camera_outlined,
+                        label: c.hasFoto ? 'Tandai selesai' : 'Lengkapi foto',
+                        icon: c.hasFoto ? Icons.check_circle_outline : Icons.photo_camera_outlined,
                         loading: working,
-                        onPressed: c.changePhoto,
+                        onPressed: c.hasFoto ? c.markDone : c.changePhoto,
                       ),
                     ),
                   ),
@@ -87,12 +89,21 @@ class _DetailView extends StatelessWidget {
                   const SizedBox(height: 4),
                   MetaRow(Icons.location_on_outlined, lokasi),
                 ],
+                if (l.tanggalFollowUp != null) ...[
+                  const SizedBox(height: 4),
+                  MetaRow(Icons.event_repeat_outlined, 'Follow-up ${formatDate(l.tanggalFollowUp!)}'),
+                ],
               ]),
             ),
             if (!l.isDone) ...[
               const SizedBox(height: 16),
-              const InfoBanner('Foto dokumentasi belum terkirim. Tekan "Lengkapi foto" untuk menyelesaikan LKH.'),
+              InfoBanner(c.hasFoto
+                  ? 'LKH berstatus BELUM. Ubah datanya bila perlu, lalu tekan "Tandai selesai".'
+                  : 'Foto dokumentasi belum terkirim. Tekan "Lengkapi foto" untuk menyelesaikan LKH.'),
             ],
+            const SizedBox(height: 20),
+            const SectionTitle('Status project'),
+            _StatusProjectCard(c: c),
             const SizedBox(height: 20),
             const SectionTitle('Hasil kunjungan'),
             AppCard(child: Text(l.hasilKunjungan, style: const TextStyle(fontSize: 14, height: 1.4))),
@@ -105,6 +116,52 @@ class _DetailView extends StatelessWidget {
             const SectionTitle('Dokumentasi'),
             _Dokumentasi(c: c),
           ],
+        );
+      });
+}
+
+Color _dotColor(String? warna) => statusColor(warna) ?? parseHexColor(warna) ?? AppColors.primary;
+
+/// Status project saat ini (nama + warna) dan nama project-nya.
+class _StatusProjectCard extends StatelessWidget {
+  const _StatusProjectCard({required this.c});
+  final LkhDetailController c;
+
+  @override
+  Widget build(BuildContext context) => Obx(() {
+        if (c.loadingProject.value) {
+          return const AppCard(child: LinearProgressIndicator());
+        }
+        final p = c.project.value;
+        if (p == null) {
+          return AppCard(
+            child: Row(children: [
+              const Icon(Icons.info_outline, size: 18, color: AppColors.muted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(c.projectError.value ?? 'Status project tidak tersedia.',
+                    style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+              ),
+              TextButton(onPressed: c.loadProject, child: const Text('Coba lagi')),
+            ]),
+          );
+        }
+        return AppCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: _dotColor(p.statusWarna)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(p.statusNama ?? 'Belum ada status', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            MetaRow(Icons.folder_open_outlined, p.namaProject),
+          ]),
         );
       });
 }
@@ -136,7 +193,7 @@ class _Dokumentasi extends StatelessWidget {
                 Expanded(child: Text('Belum ada foto dokumentasi.', style: TextStyle(fontSize: 13))),
               ]),
             ),
-          if (isDone) ...[
+          if (!isDone && c.hasFoto && c.canEdit) ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: working ? null : c.changePhoto,
@@ -159,19 +216,21 @@ class _Dokumentasi extends StatelessWidget {
                 ),
               ]),
             ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: working ? null : c.changeLampiran,
-            icon: const Icon(Icons.attach_file_rounded),
-            label: Text(lampiran == null ? 'Unggah lampiran' : 'Ganti lampiran'),
-          ),
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text(
-              'Lampiran: PDF, Word, atau Excel, maks. 5 MB. Membuka dokumen belum tersedia di app.',
-              style: TextStyle(fontSize: 12, color: AppColors.muted),
+          if (!isDone && c.canEdit) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: working ? null : c.changeLampiran,
+              icon: const Icon(Icons.attach_file_rounded),
+              label: Text(lampiran == null ? 'Unggah lampiran' : 'Ganti lampiran'),
             ),
-          ),
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Lampiran: PDF, Word, atau Excel, maks. 5 MB. Membuka dokumen belum tersedia di app.',
+                style: TextStyle(fontSize: 12, color: AppColors.muted),
+              ),
+            ),
+          ],
         ]);
       });
 }
@@ -202,7 +261,82 @@ class _EditView extends StatelessWidget {
               maxLines: 4,
               decoration: const InputDecoration(labelText: 'Tindak lanjut (opsional)', prefixIcon: Icon(Icons.redo_rounded)),
             ),
+            gap,
+            Obx(() {
+              final d = c.followUp.value;
+              return InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => c.pickFollowUp(context),
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Tanggal follow-up (opsional)',
+                    prefixIcon: const Icon(Icons.event_repeat_outlined),
+                    suffixIcon: d == null
+                        ? null
+                        : IconButton(
+                            onPressed: c.clearFollowUp,
+                            tooltip: 'Hapus tanggal',
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                          ),
+                  ),
+                  child: Text(d == null ? 'Belum diatur' : formatDate(d)),
+                ),
+              );
+            }),
           ]),
+        ),
+        const SizedBox(height: 20),
+        const SectionTitle('Status project'),
+        AppCard(
+          child: Obx(() {
+            final p = c.project.value;
+            if (c.loadingProject.value) return const LinearProgressIndicator();
+            if (p == null) {
+              return const Row(children: [
+                Icon(Icons.info_outline, size: 18, color: AppColors.muted),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Status project tidak dapat dimuat, jadi tidak diubah dari sini.',
+                    style: TextStyle(fontSize: 13, color: AppColors.muted),
+                  ),
+                ),
+              ]);
+            }
+            if (!c.canChangeStatus) {
+              return Row(children: [
+                Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: _dotColor(p.statusWarna))),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('${p.statusNama ?? 'Belum ada status'} · tidak ada status lanjutan yang tersedia', style: const TextStyle(fontSize: 13)),
+                ),
+              ]);
+            }
+            return DropdownButtonFormField<int>(
+              initialValue: c.statusId.value,
+              isExpanded: true,
+              dropdownColor: AppColors.surfaceHigh,
+              borderRadius: BorderRadius.circular(14),
+              decoration: const InputDecoration(
+                labelText: 'Status project',
+                prefixIcon: Icon(Icons.flag_outlined),
+                helperText: 'Status tidak dapat dimundurkan ke tahap sebelumnya.',
+                helperMaxLines: 2,
+              ),
+              items: [
+                for (final s in c.statusOptions)
+                  DropdownMenuItem(
+                    value: s.id,
+                    child: Row(children: [
+                      Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: _dotColor(s.warna))),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(s.nama, overflow: TextOverflow.ellipsis)),
+                    ]),
+                  ),
+              ],
+              onChanged: (v) => c.statusId.value = v,
+            );
+          }),
         ),
         const SizedBox(height: 20),
         const SectionTitle('Kontak yang ditemui'),
