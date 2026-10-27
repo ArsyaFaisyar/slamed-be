@@ -9,6 +9,7 @@ import 'package:slamed_app/features/profile/data/profile_repository.dart';
 import 'package:slamed_app/features/profile/presentation/controllers/profile_controller.dart';
 import 'package:slamed_app/features/project/data/project_repository.dart';
 import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
+import 'package:slamed_app/features/project/data/project_status_repository.dart';
 
 /// Satu-satunya tempat dependency global dirakit. Controller menerima
 /// repository lewat constructor, bukan membuat ApiClient sendiri.
@@ -24,6 +25,7 @@ class InitialBinding extends Bindings {
     Get.put<RkhRepository>(RkhRepository(api), permanent: true);
     Get.put<LkhRepository>(LkhRepository(api), permanent: true);
     Get.put<ProfileRepository>(profileRepository, permanent: true);
+    Get.put<ProjectStatusRepository>(ProjectStatusRepository(api), permanent: true);
     Get.put<AuthController>(
       AuthController(
         session: session,

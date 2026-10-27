@@ -144,7 +144,7 @@ class LkhController extends GetxController {
   }
 
   /// Buka detail; daftar dimuat ulang setelah kembali (data bisa berubah/terhapus).
-  Future<void> openDetail(Lkh l) async {
+   Future<void> openDetail(Lkh l) async {
     final r = _rkhOf(l.rkhId);
     await Get.toNamed(
       AppRoutes.lkhDetail,
@@ -152,6 +152,7 @@ class LkhController extends GetxController {
         l,
         r?.judulKegiatan ?? 'RKH #${l.rkhId}',
         r == null ? '-' : customerName(r.customerId),
+        projectId: r?.projectId,
       ),
     );
     load();

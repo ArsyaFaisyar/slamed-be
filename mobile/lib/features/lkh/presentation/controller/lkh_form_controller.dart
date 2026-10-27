@@ -13,8 +13,11 @@ import 'package:slamed_app/core/constants/app_constant.dart';
 import 'package:slamed_app/core/network/api_exception.dart';
 import 'package:slamed_app/features/lkh/data/lkh_repository.dart';
 import 'package:slamed_app/features/lkh/data/models/lkh_create.dart';
+import 'package:slamed_app/features/project/data/models/project_status.dart';
+import 'package:slamed_app/features/project/data/project_repository.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh.dart';
 import 'package:slamed_app/shared/helpers/snackbar.dart';
+import 'package:slamed_app/features/project/domain/project_status_rules.dart';
 
 /// Argumen navigasi ke form LKH.
 class LkhFormArgs {
@@ -68,8 +71,9 @@ Uint8List _stampPhoto(_StampJob job) {
 }
 
 class LkhFormController extends GetxController {
-  LkhFormController(this._repo);
+  LkhFormController(this._repo, this._projects);
   final LkhRepository _repo;
+  final ProjectRepository _projects;
 
   late final Rkh rkh;
   late final String customerName;
@@ -89,6 +93,14 @@ class LkhFormController extends GetxController {
   final busy = false.obs;
   final error = RxnString();
 
+  // Status project: dropdown di form, dikirim lewat PATCH /projects/{id} setelah LKH tersimpan.
+  final statuses = <ProjectStatus>[].obs;
+  final statusId = RxnInt(); // pilihan saat ini
+  final projectNama = RxnString();
+  final loadingStatus = true.obs;
+  final statusError = RxnString();
+  int? _currentStatusId; // status project di server
+
   // Agar bisa mengulang unggah tanpa membuat LKH ganda.
   int? _lkhId;
   bool _fotoUploaded = false, _lampiranUploaded = false;
@@ -107,6 +119,7 @@ class LkhFormController extends GetxController {
     nomorPic.text = (args.nomorPic ?? '').trim();
     final now = DateTime.now();
     tanggal.value = rkh.tanggalPelaksanaan.isAfter(now) ? now : rkh.tanggalPelaksanaan;
+    _loadStatus();
   }
 
   @override
@@ -116,6 +129,37 @@ class LkhFormController extends GetxController {
     namaPic.dispose();
     nomorPic.dispose();
     super.onClose();
+  }
+
+  /// Muat project milik RKH ini (status saat ini) dan daftar status yang tersedia.
+  Future<void> _loadStatus() async {
+    loadingStatus.value = true;
+    statusError.value = null;
+    try {
+      final project = await _projects.get(rkh.projectId);
+      final list = await _projects.statuses();
+      final cur = project.statusId;
+      // Status saat ini yang sudah tidak aktif tetap ditampilkan agar dropdown valid.
+      if (cur != null && !list.any((s) => s.id == cur)) {
+        list.add(ProjectStatus(
+          id: cur,
+          nama: project.statusNama ?? 'Status #$cur',
+          warna: project.statusWarna,
+          urutan: project.statusUrutan ?? (1 << 30),
+          isActive: false,
+        ));
+      }
+      list.sort((a, b) => a.urutan.compareTo(b.urutan));
+      projectNama.value = project.namaProject;
+      _currentStatusId = cur;
+      statusId.value = cur;
+            // Status tidak boleh dimundurkan dari status project saat ini.
+      statuses.assignAll(allowedStatusTargets(all: list, currentId: cur));
+    } catch (e) {
+      statusError.value = errorMessage(e);
+    } finally {
+      loadingStatus.value = false;
+    }
   }
 
   Future<void> pickDate(BuildContext context) async {
@@ -281,6 +325,7 @@ class LkhFormController extends GetxController {
     }
     busy.value = true;
     error.value = null;
+    var step = 'pembuatan LKH';
     try {
       // 1. Buat LKH (form-urlencoded, tanpa file). Status awal NOT_YET.
       if (_lkhId == null) {
@@ -298,24 +343,37 @@ class LkhFormController extends GetxController {
         _lkhId = lkh.id;
       }
       // 2. Unggah foto. Server mengubah status LKH menjadi DONE saat ini berhasil.
+      step = 'unggah foto';
       if (!_fotoUploaded) {
         await _upload(foto.value!.path, AppConstants.jenisFoto);
         _fotoUploaded = true;
       }
       // 3. Lampiran dokumen (opsional).
+      step = 'unggah lampiran';
       final l = lampiran.value;
       if (l != null && !_lampiranUploaded) {
         await _upload(l.path!, AppConstants.jenisLampiran);
         _lampiranUploaded = true;
       }
+      // 4. Status project, hanya bila dipilih berbeda dari status saat ini.
+      step = 'perubahan status project';
+      final target = statusId.value;
+      if (target != null && target != _currentStatusId) {
+        await _projects.updateStatus(rkh.projectId, target);
+        _currentStatusId = target; // berhasil: tidak diulang saat mengirim lagi
+      }
       Get.back<bool>(result: true);
     } catch (e, st) {
-      debugPrint('[LKH] submit gagal (lkhId=$_lkhId): $e');
+      debugPrint('[LKH] submit gagal pada $step (lkhId=$_lkhId): $e');
       debugPrintStack(stackTrace: st, maxFrames: 8);
+      final hint = switch (step) {
+        'unggah lampiran' => ' Jika lampiran terus gagal, hapus lampiran lalu kirim lagi.',
+        'perubahan status project' => ' Atau kembalikan pilihan status ke semula lalu kirim lagi.',
+        _ => '',
+      };
       error.value = _lkhId == null
           ? errorMessage(e)
-          : 'LKH sudah tersimpan, tetapi unggah file gagal: ${errorMessage(e)}\n'
-              'Tekan "Kirim LKH" lagi untuk mengulang. Jika lampiran terus gagal, hapus lampiran lalu kirim lagi.';
+          : 'LKH sudah tersimpan, tetapi $step gagal: ${errorMessage(e)}\nTekan "Kirim LKH" lagi untuk mengulang.$hint';
     } finally {
       busy.value = false;
     }

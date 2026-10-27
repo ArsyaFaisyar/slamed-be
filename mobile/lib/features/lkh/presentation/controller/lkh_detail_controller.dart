@@ -5,32 +5,52 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:slamed_app/core/constants/app_constant.dart';
 import 'package:slamed_app/core/network/api_exception.dart';
+import 'package:slamed_app/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:slamed_app/features/lkh/data/lkh_repository.dart';
 import 'package:slamed_app/features/lkh/data/models/lkh.dart';
 import 'package:slamed_app/features/lkh/data/models/lkh_attachment.dart';
 import 'package:slamed_app/features/lkh/data/models/lkh_update.dart';
 import 'package:slamed_app/features/lkh/data/photo_capture.dart';
+import 'package:slamed_app/features/lkh/domain/lkh_edit_rules.dart';
+import 'package:slamed_app/features/project/data/models/project.dart';
+import 'package:slamed_app/features/project/data/models/project_status.dart';
+import 'package:slamed_app/features/project/data/project_repository.dart';
+import 'package:slamed_app/features/project/domain/project_status_rules.dart';
 import 'package:slamed_app/shared/helpers/confirm.dart';
 import 'package:slamed_app/shared/helpers/snackbar.dart';
 
 /// Argumen navigasi ke detail LKH.
 class LkhDetailArgs {
-  const LkhDetailArgs(this.lkh, this.judulRkh, this.customerName);
+  const LkhDetailArgs(this.lkh, this.judulRkh, this.customerName, {this.projectId});
   final Lkh lkh;
   final String judulRkh, customerName;
+
+  /// Project milik RKH dari LKH ini (null bila RKH-nya tidak ditemukan).
+  final int? projectId;
 }
 
 class LkhDetailController extends GetxController {
-  LkhDetailController(this._repo);
+  LkhDetailController(this._repo, this._auth, this._projects);
   final LkhRepository _repo;
+  final AuthController _auth;
+  final ProjectRepository _projects;
 
   late final Rx<Lkh> lkh;
   late final String judulRkh, customerName;
+  int? _projectId;
 
   final hasil = TextEditingController();
   final tindak = TextEditingController();
   final namaPic = TextEditingController();
   final nomorPic = TextEditingController();
+  final followUp = Rxn<DateTime>();
+
+  // Status project (dari project milik RKH).
+  final project = Rxn<Project>();
+  final allStatuses = <ProjectStatus>[].obs;
+  final statusId = RxnInt(); // pilihan saat mengubah
+  final loadingProject = true.obs;
+  final projectError = RxnString();
 
   final attachments = <LkhAttachment>[].obs;
   final fotoBytes = Rxn<Uint8List>();
@@ -57,7 +77,9 @@ class LkhDetailController extends GetxController {
     lkh = args.lkh.obs;
     judulRkh = args.judulRkh;
     customerName = args.customerName;
+    _projectId = args.projectId;
     loadFiles();
+    loadProject();
   }
 
   @override
@@ -84,12 +106,107 @@ class LkhDetailController extends GetxController {
     }
   }
 
+  /// Muat project beserta daftar status aktif (untuk menampilkan dan mengubah status).
+  Future<void> loadProject() async {
+    final id = _projectId;
+    if (id == null) {
+      projectError.value = 'Project untuk LKH ini tidak ditemukan.';
+      loadingProject.value = false;
+      return;
+    }
+    loadingProject.value = true;
+    projectError.value = null;
+    try {
+      final p = await _projects.get(id);
+      final list = await _projects.statuses();
+      final cur = p.statusId;
+      // Status saat ini yang sudah tidak aktif tetap ditampilkan.
+      if (cur != null && !list.any((s) => s.id == cur)) {
+        list.add(ProjectStatus(
+          id: cur,
+          nama: p.statusNama ?? 'Status #$cur',
+          warna: p.statusWarna,
+          urutan: p.statusUrutan ?? (1 << 30),
+          isActive: false,
+        ));
+      }
+      list.sort((a, b) => a.urutan.compareTo(b.urutan));
+      allStatuses.assignAll(list);
+      project.value = p;
+    } catch (e) {
+      projectError.value = errorMessage(e);
+    } finally {
+      loadingProject.value = false;
+    }
+  }
+
+  /// Status yang boleh dipilih: tidak boleh mundur dari status project saat ini.
+  List<ProjectStatus> get statusOptions =>
+      allowedStatusTargets(all: allStatuses, currentId: project.value?.statusId);
+
+  /// Status dapat diubah hanya bila project sudah termuat dan ada pilihan selain status saat ini.
+  bool get canChangeStatus => project.value != null && statusOptions.length > 1;
+
+  LkhEditState get editState =>
+      lkhEditState(lkh: lkh.value, role: _auth.role, userId: _auth.user.value?.id);
+
+  /// false bila LKH milik sales lain.
+  bool get canEdit => editState != LkhEditState.notOwner;
+
+  Future<void> _setStatus(String status) async {
+    lkh.value = await _repo.update(lkh.value.id, LkhUpdate(statusLkh: status));
+  }
+
+  /// Tombol Ubah. LKH DONE harus dikembalikan ke BELUM dulu sebelum bisa diedit.
+  Future<void> requestEdit() async {
+    if (busy.value || editState == LkhEditState.notOwner) return;
+    if (editState == LkhEditState.needsRevert) {
+      final ok = await confirmDialog(
+        title: 'Kembalikan ke Belum?',
+        message: 'LKH ini sudah DONE. Agar bisa diubah, statusnya dikembalikan ke BELUM dulu. '
+            'Setelah selesai mengubah, tandai DONE lagi.',
+        confirmLabel: 'Kembalikan',
+      );
+      if (!ok) return;
+      busy.value = true;
+      try {
+        await _setStatus(AppConstants.statusLkhNotYet);
+      } catch (e) {
+        showSnack(errorMessage(e));
+        return;
+      } finally {
+        busy.value = false;
+      }
+    }
+    startEdit();
+  }
+
+  /// Tandai DONE lagi setelah selesai mengubah (foto dokumentasi harus sudah ada).
+  Future<void> markDone() async {
+    if (busy.value) return;
+    if (!hasFoto) {
+      showSnack('Foto dokumentasi wajib ada sebelum LKH ditandai DONE.');
+      return;
+    }
+    busy.value = true;
+    try {
+      await _setStatus(AppConstants.statusLkhDone);
+      showSnack('LKH ditandai DONE.');
+    } catch (e) {
+      showSnack(errorMessage(e));
+    } finally {
+      busy.value = false;
+    }
+  }
+
   void startEdit() {
     final l = lkh.value;
     hasil.text = l.hasilKunjungan;
     tindak.text = l.tindakLanjut ?? '';
     namaPic.text = l.namaPic;
     nomorPic.text = l.nomorPic;
+    followUp.value = l.tanggalFollowUp;
+    statusId.value = project.value?.statusId;
     error.value = null;
     editing.value = true;
   }
@@ -98,6 +215,24 @@ class LkhDetailController extends GetxController {
     error.value = null;
     editing.value = false;
   }
+
+  Future<void> pickFollowUp(BuildContext context) async {
+    final t = DateTime.now();
+    final today = DateTime(t.year, t.month, t.day);
+    final cur = followUp.value;
+    final first = (cur != null && cur.isBefore(today)) ? cur : today;
+    var last = today.add(const Duration(days: 365));
+    if (cur != null && cur.isAfter(last)) last = cur;
+    final d = await showDatePicker(
+      context: context,
+      initialDate: cur ?? today.add(const Duration(days: 1)),
+      firstDate: first,
+      lastDate: last,
+    );
+    if (d != null) followUp.value = d;
+  }
+
+  void clearFollowUp() => followUp.value = null;
 
   Future<void> save() async {
     final h = hasil.text.trim(), n = namaPic.text.trim(), p = nomorPic.text.trim();
@@ -110,8 +245,25 @@ class LkhDetailController extends GetxController {
     try {
       lkh.value = await _repo.update(
         lkh.value.id,
-        LkhUpdate(hasilKunjungan: h, tindakLanjut: tindak.text.trim(), namaPic: n, nomorPic: p),
+        LkhUpdate(
+          hasilKunjungan: h,
+          tindakLanjut: tindak.text.trim(),
+          tanggalFollowUp: followUp.value,
+          namaPic: n,
+          nomorPic: p,
+        ),
       );
+      // Status project hanya dikirim bila berubah dari status saat ini.
+      final target = statusId.value;
+      final pid = _projectId;
+      if (pid != null && target != null && target != project.value?.statusId) {
+        try {
+          project.value = await _projects.updateStatus(pid, target);
+        } catch (e) {
+          error.value = 'LKH sudah tersimpan, tetapi status project gagal diubah: ${errorMessage(e)}';
+          return; // tetap di mode ubah agar bisa dicoba lagi
+        }
+      }
       editing.value = false;
       showSnack('LKH diperbarui.');
     } catch (e) {

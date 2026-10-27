@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:slamed_app/core/network/api_exception.dart';
-import 'package:slamed_app/core/utils/color_utils.dart.dart';
+import 'package:slamed_app/core/utils/color_utils.dart';
 import 'package:slamed_app/features/customer/data/customer_repository.dart';
 import 'package:slamed_app/features/customer/data/models/customer.dart';
 import 'package:slamed_app/features/project/data/models/project.dart';
