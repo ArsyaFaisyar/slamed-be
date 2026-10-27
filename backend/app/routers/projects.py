@@ -28,8 +28,6 @@ PIPELINE_PROSPEK = "Prospek"
 PIPELINE_HOT = "Hot Prospek"
 PIPELINE_VALUES = (PIPELINE_PROSPEK, PIPELINE_HOT)
 
-# Saat status project berubah ke salah satu nama ini (tanpa membedakan huruf besar/kecil),
-# pipeline otomatis menjadi Hot Prospek. Sesuaikan dengan nama di Master Status Project.
 HOT_PROSPEK_STATUS_NAMES = {"req penawaran", "request penawaran"}
 
 
@@ -144,6 +142,7 @@ def get_project_dashboard_summary(
         "nilai_hot_prospek": result.nilai_hot_prospek,
     }
 
+
 @router.get("/{project_id}/rab")
 def get_project_rab(
     project_id: int,
@@ -217,6 +216,7 @@ def get_project_rab(
         "request_penawaran": hasil,
     }
 
+
 @router.get("/{project_id}", response_model=ProjectProspekResponse)
 def get_project(
     project_id: int,
@@ -233,6 +233,7 @@ def get_project(
             detail="Project tidak ditemukan atau kamu tidak memiliki akses",
         )
     return project
+
 
 @router.post(
     "/",
@@ -322,22 +323,36 @@ def update_project(
     data: ProjectProspekUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(
-        require_roles("SUPERADMIN", "SPV")
+        require_roles("SUPERADMIN", "SPV", "SALES")
     ),
 ):
-    project = db.query(ProjectProspek).filter(
+    project_query = db.query(ProjectProspek).filter(
         ProjectProspek.id == project_id
-    ).first()
+    )
+
+    if current_user.role == "SALES":
+        project_query = project_query.filter(
+            ProjectProspek.sales_id == current_user.id
+        )
+
+    project = project_query.first()
 
     if not project:
         raise HTTPException(
             status_code=404,
-            detail="Project tidak ditemukan",
+            detail="Project tidak ditemukan atau kamu tidak memiliki akses",
         )
 
     updates = data.model_dump(exclude_unset=True)
 
-    # Validasi pipeline status
+    if current_user.role == "SALES":
+        forbidden_fields = set(updates.keys()) - {"status_id"}
+        if forbidden_fields:
+            raise HTTPException(
+                status_code=403,
+                detail="Sales hanya dapat mengubah status project",
+            )
+
     if "pipeline_status" in updates:
         if updates["pipeline_status"] not in PIPELINE_VALUES:
             raise HTTPException(
@@ -345,7 +360,6 @@ def update_project(
                 detail="Pipeline status harus Prospek atau Hot Prospek",
             )
 
-    # Validasi customer
     if "customer_id" in updates:
         customer = db.query(Customer).filter(
             Customer.id == updates["customer_id"]
@@ -363,7 +377,6 @@ def update_project(
                 detail="Customer belum disetujui, project tidak dapat menggunakan customer ini",
             )
 
-    # Validasi sales
     if updates.get("sales_id") is not None:
         sales = db.query(User).filter(
             User.id == updates["sales_id"],
@@ -379,7 +392,6 @@ def update_project(
 
     old_status_id = project.status_id
 
-    # Validasi status project sebelum mengubah data
     new_status = None
     old_status = None
 
@@ -398,7 +410,6 @@ def update_project(
                 detail="Status project tidak ditemukan atau tidak aktif",
             )
 
-        # Status Req Penawaran otomatis menaikkan pipeline menjadi Hot Prospek.
         if new_status.nama.strip().lower() in HOT_PROSPEK_STATUS_NAMES:
             updates["pipeline_status"] = PIPELINE_HOT
 
@@ -407,9 +418,6 @@ def update_project(
                 ProjectStatus.id == old_status_id
             ).first()
 
-    # Terapkan perubahan dan catat field yang benar-benar berubah.
-    # Nilai lama dibaca saat itu juga, sehingga field yang ditambahkan otomatis
-    # (pipeline_status di atas) ikut tertangani.
     labels = {
         "nama_project": "Nama project",
         "deskripsi": "Deskripsi",
@@ -428,14 +436,12 @@ def update_project(
         if old_value != value:
             setattr(project, field, value)
 
-            # status_id memiliki log tersendiri di bawah
             if field != "status_id":
                 label = labels.get(field, field)
                 perubahan.append(
                     f"{label}: {old_value} → {value}"
                 )
 
-    # Catat riwayat status project
     if (
         "status_id" in updates
         and project.status_id != old_status_id
@@ -462,7 +468,6 @@ def update_project(
             ),
         )
 
-    # Catat perubahan field lainnya
     if perubahan:
         catat_project_log(
             db=db,
