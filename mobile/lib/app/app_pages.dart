@@ -6,6 +6,9 @@ import 'package:slamed_app/features/auth/presentation/controllers/login_controll
 import 'package:slamed_app/features/auth/presentation/pages/login_page.dart';
 import 'package:slamed_app/features/auth/presentation/pages/splash_page.dart';
 import 'package:slamed_app/features/customer/data/customer_repository.dart';
+import 'package:slamed_app/features/customer/presentation/controllers/customer_controller.dart';
+import 'package:slamed_app/features/customer/presentation/controllers/customer_form_controller.dart';
+import 'package:slamed_app/features/customer/presentation/pages/customer_fom_page.dart';
 import 'package:slamed_app/features/home/presentation/controller/home_controller.dart';
 import 'package:slamed_app/features/home/presentation/page/home_shell.dart';
 import 'package:slamed_app/features/lkh/data/lkh_repository.dart';
@@ -47,6 +50,10 @@ abstract final class AppPages {
           fenix: true,
         );
         Get.lazyPut(
+          () => CustomerController(Get.find<CustomerRepository>(), Get.find<AuthController>()),
+          fenix: true,
+        );
+        Get.lazyPut(
           () => ProspectController(Get.find<ProjectRepository>(), Get.find<CustomerRepository>()),
           fenix: true,
         );
@@ -82,6 +89,12 @@ abstract final class AppPages {
       page: () => const LkhDetailPage(),
       middlewares: [AuthMiddleware()],
       binding: BindingsBuilder(() => Get.lazyPut(() => LkhDetailController(Get.find<LkhRepository>()))),
+    ),
+    GetPage(
+      name: AppRoutes.customerForm,
+      page: () => const CustomerFormPage(),
+      middlewares: [AuthMiddleware()],
+      binding: BindingsBuilder(() => Get.lazyPut(() => CustomerFormController(Get.find<CustomerRepository>()))),
     ),
   ];
 }

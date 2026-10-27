@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:slamed_app/core/constants/roles.dart';
 import 'package:slamed_app/features/auth/presentation/controllers/auth_controller.dart';
+import 'package:slamed_app/features/customer/presentation/controllers/customer_controller.dart';
+import 'package:slamed_app/features/customer/presentation/pages/customer_page.dart';
 import 'package:slamed_app/features/dashboard/presentation/pages/dashboard_page.dart';
 import 'package:slamed_app/features/lkh/presentation/controller/lkh_controller.dart';
 import 'package:slamed_app/features/lkh/presentation/pages/lkh_page.dart';
 import 'package:slamed_app/features/profile/presentation/pages/profile_page.dart';
+import 'package:slamed_app/features/project/presentation/controllers/prospect_controller.dart';
 import 'package:slamed_app/features/project/presentation/pages/prospect_page.dart';
 import 'package:slamed_app/features/rkh/presentation/controllers/rkh_controller.dart';
 import 'package:slamed_app/features/rkh/presentation/pages/rkh_page.dart';
-import 'package:slamed_app/features/project/presentation/controllers/prospect_controller.dart';
-
 
 class NavItem {
   const NavItem(this.label, this.icon, this.selectedIcon, this.page, {this.onShow});
@@ -41,6 +42,9 @@ class HomeController extends GetxController {
   List<NavItem> _itemsFor(String? role) {
     const dashboard = NavItem('Beranda', Icons.home_outlined, Icons.home_rounded, DashboardPage());
     const profile = NavItem('Profil', Icons.person_outline, Icons.person_rounded, ProfilePage());
+    final customer = NavItem('Customer', Icons.business_outlined, Icons.business_rounded, const CustomerPage(),
+        onShow: () => Get.find<CustomerController>().load());
+
     if (Roles.isField(role)) {
       return [
         dashboard,
@@ -48,11 +52,14 @@ class HomeController extends GetxController {
             onShow: () => Get.find<RkhController>().load()),
         NavItem('LKH', Icons.fact_check_outlined, Icons.fact_check_rounded, const LkhPage(),
             onShow: () => Get.find<LkhController>().load()),
+        customer,
         NavItem('Prospek', Icons.trending_up, Icons.trending_up_rounded, const ProspectPage(),
             onShow: () => Get.find<ProspectController>().load()),
       ];
     }
-    // SUPERADMIN, PPIC, ADMIN_*: menunggu endpoint di OpenAPI.
+    // SUPERADMIN menyetujui pengajuan customer.
+    if (role == Roles.superadmin) return [dashboard, customer, profile];
+    // PPIC, ADMIN_*: menunggu endpoint di OpenAPI.
     return [dashboard, profile];
   }
 }
