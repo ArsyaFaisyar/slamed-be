@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.models.branch import Branch
@@ -11,6 +12,14 @@ from app.models.area import Area
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
+
+class UserOptionResponse(BaseModel):
+    id: int
+    nama: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 def validate_branch(db: Session, branch_id: int | None):
     if branch_id is None:
         return
@@ -20,6 +29,8 @@ def validate_branch(db: Session, branch_id: int | None):
             status_code=400,
             detail="Branch tidak ditemukan",
         )
+
+
 def validate_area(db: Session, area_id: int | None):
     if area_id is None:
         return
@@ -31,6 +42,7 @@ def validate_area(db: Session, area_id: int | None):
             status_code=400,
             detail="Area tidak ditemukan",
         )
+
 
 @router.get("/", response_model=list[UserResponse])
 def get_users(
@@ -45,9 +57,26 @@ def get_users(
 
     return query.order_by(User.id.desc()).all()
 
+
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.get("/options", response_model=list[UserOptionResponse])
+def get_user_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role == "SALES":
+        return [current_user]
+
+    query = db.query(User).filter(User.is_active == 1)
+
+    if current_user.role == "SPV":
+        query = query.filter(User.role == "SALES")
+
+    return query.order_by(User.nama.asc()).all()
 
 
 @router.get("/by-area/{area_id}", response_model=list[UserResponse])
@@ -69,6 +98,7 @@ def get_sales_by_area(
         User.role == "SALES",
         User.is_active == 1,
     ).order_by(User.nama.asc()).all()
+
 
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
@@ -217,6 +247,7 @@ def update_user(
         )
 
     return user
+
 
 @router.patch("/{user_id}/password")
 def reset_user_password(

@@ -12,10 +12,10 @@ import {
   updateTemplatePenawaran,
   uploadTemplatePreview,
   type TemplatePenawaran,
-} from '../api/templatePenawaran'
-import { TEMPLATE_TAGS } from '../constant/templateTags'
-import { getErrorMessage, getFieldErrors } from '../utils/error'
-import { resolveMediaUrl } from '../utils/media'
+} from '../api/templatePenawaran.ts'
+import { TEMPLATE_TAGS } from '../constant/templateTags.ts'
+import { getErrorMessage, getFieldErrors } from '../utils/error.ts'
+import { resolveMediaUrl } from '../utils/media.ts'
 
 const LIST_PATH = '/setting/template-penawaran'
 const MAX_PREVIEW_SIZE = 2 * 1024 * 1024

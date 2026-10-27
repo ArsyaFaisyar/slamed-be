@@ -73,6 +73,7 @@ const router = createRouter({
           component: () => import("../views/TemplatePenawaranFormView.vue"),
           meta: { title: "Edit Template" },
         },
+        { path: "/aktivitas/request-penawaran/:requestId/revisi/:revisiId", component: () => import("../views/RevisiPenawaranView.vue"), meta: { requiresAuth: true } },
       ],
     },
     {

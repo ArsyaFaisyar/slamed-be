@@ -10,9 +10,9 @@ import {
   deleteTemplatePenawaran,
   getTemplatePenawaranList,
   type TemplatePenawaran,
-} from '../api/templatePenawaran'
-import { getErrorMessage } from '../utils/error'
-import { resolveMediaUrl } from '../utils/media'
+} from '../api/templatePenawaran.ts'
+import { getErrorMessage } from '../utils/error.ts'
+import { resolveMediaUrl } from '../utils/media.ts'
 
 const confirm = useConfirm()
 const router = useRouter()

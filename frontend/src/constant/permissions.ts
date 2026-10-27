@@ -42,6 +42,7 @@ const dynamicRoutes: { pattern: RegExp; base: string }[] = [
   { pattern: /^\/master\/branch\/\d+$/, base: "/master/branch" },
   { pattern: /^\/aktivitas\/lkh\/\d+\/request-penawaran$/, base: "/aktivitas/lkh" },
   { pattern: /^\/aktivitas\/request-penawaran\/\d+$/, base: "/support/request-penawaran" },
+  { pattern: /^\/aktivitas\/request-penawaran\/\d+\/revisi\/\d+$/, base: "/support/request-penawaran" },
 ];
 
 function resolvePermissionPath(path: string): string {
