@@ -2,6 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from pydantic import BaseModel, Field
+from io import BytesIO
+from datetime import date, time, timedelta
+
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import joinedload
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
+
 from app.db.database import get_db
 from app.models.customer import Customer
 from app.models.user import User
@@ -69,6 +79,193 @@ def get_customers(
         )
 
     return query.order_by(Customer.id.desc()).all()
+
+@router.get("/export/excel")
+def export_customer_excel(
+    area: str | None = None,
+    sales: str | None = None,
+    status_approval: str | None = None,
+    tanggal_mulai: date | None = None,
+    tanggal_selesai: date | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Validasi rentang tanggal
+    if tanggal_mulai and tanggal_selesai:
+        if tanggal_mulai > tanggal_selesai:
+            raise HTTPException(
+                status_code=400,
+                detail="Tanggal mulai tidak boleh melebihi tanggal selesai",
+            )
+
+    # Ambil data customer beserta relasi area dan sales
+    query = db.query(Customer).options(
+        joinedload(Customer.area_rel),
+        joinedload(Customer.sales_rel),
+    )
+
+    # Hak akses mengikuti endpoint get_customers()
+    if current_user.role == "SALES":
+        query = query.filter(
+            Customer.sales_id == current_user.id
+        )
+    elif current_user.role not in CUSTOMER_VIEW_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Kamu tidak memiliki akses ke data customer",
+        )
+
+    # Filter berdasarkan nama area
+    if area and area.strip():
+        query = query.filter(
+            Customer.area_rel.has(
+                Area.nama.ilike(f"%{area.strip()}%")
+            )
+        )
+
+    # Filter berdasarkan nama sales
+    if sales and sales.strip():
+        query = query.filter(
+            Customer.sales_rel.has(
+                User.nama.ilike(f"%{sales.strip()}%")
+            )
+        )
+
+    # Filter status approval
+    if status_approval and status_approval.strip():
+        query = query.filter(
+            Customer.approval_status
+            == status_approval.strip().upper()
+        )
+
+    # Filter tanggal pembuatan customer
+    if tanggal_mulai:
+        mulai = datetime.combine(
+            tanggal_mulai,
+            time.min,
+        )
+        query = query.filter(
+            Customer.created_at >= mulai
+        )
+
+    if tanggal_selesai:
+        sampai = datetime.combine(
+            tanggal_selesai + timedelta(days=1),
+            time.min,
+        )
+        query = query.filter(
+            Customer.created_at < sampai
+        )
+
+    data_customer = query.order_by(
+        Customer.id.desc()
+    ).all()
+
+    # Buat workbook Excel
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Data Customer"
+
+    headers = [
+        "Nama Instansi",
+        "Nama PIC",
+        "Kontak PIC",
+        "Kota",
+        "Kategori",
+        "Area",
+        "Sales",
+        "Status Approval",
+        "Alasan Penolakan",
+        "Tanggal Dibuat",
+        "Terakhir Diperbarui",
+    ]
+
+    worksheet.append(headers)
+
+    # Styling header
+    for cell in worksheet[1]:
+        cell.font = Font(
+            bold=True,
+            color="FFFFFF",
+        )
+        cell.fill = PatternFill(
+            fill_type="solid",
+            fgColor="1F4E78",
+        )
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+        )
+
+    # Isi data
+    for customer in data_customer:
+        worksheet.append([
+            customer.nama_instansi,
+            customer.nama_pic,
+            customer.kontak_pic,
+            customer.kota,
+            customer.kategori,
+            customer.area_nama,
+            customer.sales_nama,
+            customer.approval_status,
+            customer.rejection_reason,
+            (
+                customer.created_at.replace(tzinfo=None)
+                if customer.created_at else None
+            ),
+            (
+                customer.updated_at.replace(tzinfo=None)
+                if customer.updated_at else None
+            ),
+        ])
+
+    # Format tanggal Excel
+    for row in worksheet.iter_rows(
+        min_row=2,
+        min_col=10,
+        max_col=11,
+    ):
+        for cell in row:
+            cell.number_format = "dd-mm-yyyy hh:mm:ss"
+
+    # Atur lebar kolom berdasarkan isi
+    for column_cells in worksheet.columns:
+        max_length = max(
+            len(str(cell.value or ""))
+            for cell in column_cells
+        )
+        column_letter = get_column_letter(
+            column_cells[0].column
+        )
+        worksheet.column_dimensions[
+            column_letter
+        ].width = min(max_length + 3, 40)
+
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+
+    # Simpan workbook ke memory
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+
+    filename = (
+        f"data_customer_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    )
+
+    return StreamingResponse(
+        output,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"'
+            )
+        },
+    )
+
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
