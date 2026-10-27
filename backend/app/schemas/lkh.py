@@ -44,3 +44,21 @@ class LKHResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
+    
+class LKHExportSchema(BaseModel):
+    id: int
+    rkh_id: int
+    sales_id: int
+    tanggal_kunjungan: date
+    tanggal_follow_up: Optional[date] = None
+    hasil_kunjungan: str
+    status_lkh: Literal["NOT_YET", "DONE"]
+    tindak_lanjut: Optional[str] = None
+    nama_pic: str
+    nomor_pic: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
