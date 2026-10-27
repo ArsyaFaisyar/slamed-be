@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import InputText from 'primevue/inputtext'
+import MultiSelect from 'primevue/multiselect'
+import Paginator from 'primevue/paginator'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
@@ -19,6 +21,7 @@ import {
   type ProjectDashboardSummary,
 } from '../api/projects'
 import { getCustomers, isCustomerApproved, type Customer } from '../api/customers'
+import { getProjectStatuses, type ProjectStatus } from '../api/projectStatuses'
 import { getUsers, type User } from '../api/users'
 import type { UserRole } from '../constant/roles'
 import { useAuthStore } from '../stores/auth'
@@ -32,6 +35,10 @@ const projectDetailPath = (id: number) => `/transaksi/project/${id}`
 
 const SALES_ROLE: UserRole = 'SALES'
 const MANAGER_ROLES: UserRole[] = ['SUPERADMIN', 'SPV']
+const PAGE_SIZES = [10, 25, 50]
+
+type SortKey = 'nilai_proyek' | 'estimasi_closing' | 'created_at'
+type SortDir = 'asc' | 'desc'
 
 const auth = useAuthStore()
 const canManage = computed(() => MANAGER_ROLES.includes(auth.user?.role as UserRole))
@@ -39,10 +46,20 @@ const canManage = computed(() => MANAGER_ROLES.includes(auth.user?.role as UserR
 const projects = ref<Project[]>([])
 const customers = ref<Customer[]>([])
 const users = ref<User[]>([])
-const search = ref('')
+const projectStatuses = ref<ProjectStatus[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const actionError = ref('')
+
+// Pencarian, filter (checklist), urutan, dan pagination
+const search = ref('')
+const salesFilter = ref<number[]>([])
+const customerFilter = ref<number[]>([])
+const statusFilter = ref<number[]>([])
+const sortKey = ref<SortKey | null>(null)
+const sortDir = ref<SortDir>('asc')
+const first = ref(0)
+const rows = ref(PAGE_SIZES[0])
 
 const summary = ref<ProjectDashboardSummary | null>(null)
 const summaryLoading = ref(false)
@@ -174,24 +191,177 @@ async function fetchSummary() {
   }
 }
 
+/* ---------- Opsi filter (checklist) ---------- */
+
+interface FilterOption {
+  value: number
+  label: string
+  color?: string | null
+}
+
+// Semua sales: dari daftar user (bila boleh diakses) + sales yang muncul di data project.
+const salesFilterOptions = computed<FilterOption[]>(() => {
+  const map = new Map<number, string>()
+
+  for (const user of users.value) {
+    if (user.role === SALES_ROLE) map.set(user.id, user.nama)
+  }
+  for (const project of projects.value) {
+    if (!map.has(project.sales_id)) map.set(project.sales_id, project.sales_rel?.nama ?? `ID ${project.sales_id}`)
+  }
+
+  return [...map]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'id'))
+})
+
+// Semua customer: dari daftar customer + customer yang muncul di data project.
+const customerFilterOptions = computed<FilterOption[]>(() => {
+  const map = new Map<number, string>()
+
+  for (const customer of customers.value) map.set(customer.id, customer.nama_instansi)
+  for (const project of projects.value) {
+    if (!map.has(project.customer_id)) map.set(project.customer_id, `ID ${project.customer_id}`)
+  }
+
+  return [...map]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'id'))
+})
+
+// Semua status project, urut sesuai urutan di Master Status Project.
+const statusFilterOptions = computed<FilterOption[]>(() => {
+  const map = new Map<number, FilterOption & { order: number }>()
+
+  for (const status of projectStatuses.value) {
+    map.set(status.id, { value: status.id, label: status.nama, color: status.warna, order: status.urutan })
+  }
+  for (const project of projects.value) {
+    if (project.status_id != null && project.status_rel && !map.has(project.status_id)) {
+      map.set(project.status_id, {
+        value: project.status_id,
+        label: project.status_rel.nama,
+        color: project.status_rel.warna,
+        order: project.status_rel.urutan,
+      })
+    }
+  }
+
+  return [...map.values()]
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'id'))
+    .map(({ value, label, color }) => ({ value, label, color }))
+})
+
+const hasActiveFilters = computed(
+  () => salesFilter.value.length > 0 || customerFilter.value.length > 0 || statusFilter.value.length > 0,
+)
+
+function resetFilters() {
+  salesFilter.value = []
+  customerFilter.value = []
+  statusFilter.value = []
+}
+
+/* ---------- Filter, urutan, pagination ---------- */
+
 const filteredProjects = computed(() => {
   const keyword = search.value.trim().toLowerCase()
 
-  if (!keyword) return projects.value
+  return projects.value.filter((project) => {
+    if (salesFilter.value.length > 0 && !salesFilter.value.includes(project.sales_id)) return false
+    if (customerFilter.value.length > 0 && !customerFilter.value.includes(project.customer_id)) return false
+    if (
+      statusFilter.value.length > 0 &&
+      !(project.status_id != null && statusFilter.value.includes(project.status_id))
+    ) {
+      return false
+    }
 
-  return projects.value.filter((project) =>
-    [
+    if (!keyword) return true
+
+    return [
       project.nama_project,
       statusName(project),
       project.pipeline_status,
       project.deskripsi,
       customerName(project),
       salesName(project),
-    ].some(
-      (value) => String(value ?? '').toLowerCase().includes(keyword),
-    ),
-  )
+    ].some((value) => String(value ?? '').toLowerCase().includes(keyword))
+  })
 })
+
+function sortValue(project: Project, key: SortKey): number | null {
+  const raw = project[key]
+  if (raw === null || raw === undefined || raw === '') return null
+
+  if (key === 'nilai_proyek') {
+    const amount = Number(raw)
+    return Number.isNaN(amount) ? null : amount
+  }
+
+  const time = new Date(raw).getTime()
+  return Number.isNaN(time) ? null : time
+}
+
+// Data kosong selalu di paling bawah, apa pun arah urutannya.
+const sortedProjects = computed(() => {
+  const key = sortKey.value
+  if (!key) return filteredProjects.value
+
+  const direction = sortDir.value === 'asc' ? 1 : -1
+
+  return [...filteredProjects.value].sort((a, b) => {
+    const valueA = sortValue(a, key)
+    const valueB = sortValue(b, key)
+
+    if (valueA === null && valueB === null) return 0
+    if (valueA === null) return 1
+    if (valueB === null) return -1
+    return (valueA - valueB) * direction
+  })
+})
+
+const pagedProjects = computed(() => sortedProjects.value.slice(first.value, first.value + rows.value))
+
+// Klik judul kolom: naik -> turun -> kembali ke urutan awal.
+function toggleSort(key: SortKey) {
+  if (sortKey.value !== key) {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  } else if (sortDir.value === 'asc') {
+    sortDir.value = 'desc'
+  } else {
+    sortKey.value = null
+    sortDir.value = 'asc'
+  }
+}
+
+function sortIcon(key: SortKey) {
+  if (sortKey.value !== key) return 'pi pi-sort-alt opacity-50'
+  return sortDir.value === 'asc' ? 'pi pi-sort-amount-up-alt' : 'pi pi-sort-amount-down'
+}
+
+function ariaSort(key: SortKey) {
+  if (sortKey.value !== key) return 'none'
+  return sortDir.value === 'asc' ? 'ascending' : 'descending'
+}
+
+// Kembali ke halaman pertama saat pencarian, filter, urutan, atau jumlah per halaman berubah.
+watch([search, salesFilter, customerFilter, statusFilter, sortKey, sortDir, rows], () => {
+  first.value = 0
+})
+
+// Kalau data berkurang (mis. setelah hapus) dan halaman saat ini jadi kosong, mundur ke halaman terakhir.
+watch(
+  () => filteredProjects.value.length,
+  (total) => {
+    if (first.value >= total && total > 0) {
+      first.value = Math.floor((total - 1) / rows.value) * rows.value
+    }
+  },
+)
+
+/* ---------- Aksi dan data ---------- */
 
 function openCreate() {
   selectedEdit.value = null
@@ -226,6 +396,14 @@ async function fetchCustomers() {
     customers.value = await getCustomers()
   } catch {
     customers.value = []
+  }
+}
+
+async function fetchStatuses() {
+  try {
+    projectStatuses.value = await getProjectStatuses()
+  } catch {
+    projectStatuses.value = []
   }
 }
 
@@ -266,6 +444,7 @@ async function fetchUsers() {
 onMounted(() => {
   fetchProjects()
   fetchCustomers()
+  fetchStatuses()
   if (canManage.value) fetchUsers()
 })
 </script>
@@ -314,20 +493,92 @@ onMounted(() => {
 
     <section class="rounded-xl border border-line bg-card">
       <div
-        class="flex flex-col gap-3 border-b border-line p-4 sm:flex-row sm:items-center sm:justify-between"
+        class="flex flex-col gap-3 border-b border-line p-4 xl:flex-row xl:items-center xl:justify-between"
       >
         <div>
           <h2 class="font-semibold">Daftar project</h2>
           <p class="mt-1 text-sm text-fg-muted">{{ filteredProjects.length }} project ditampilkan</p>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <MultiSelect
+            v-model="salesFilter"
+            :options="salesFilterOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua sales"
+            filter
+            filter-placeholder="Cari sales..."
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} sales dipilih"
+            empty-message="Tidak ada sales"
+            empty-filter-message="Sales tidak ditemukan"
+            size="small"
+            class="w-44"
+            aria-label="Filter sales"
+          />
+
+          <MultiSelect
+            v-model="customerFilter"
+            :options="customerFilterOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua customer"
+            filter
+            filter-placeholder="Cari customer..."
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} customer dipilih"
+            empty-message="Tidak ada customer"
+            empty-filter-message="Customer tidak ditemukan"
+            size="small"
+            class="w-48"
+            aria-label="Filter customer"
+          />
+
+          <MultiSelect
+            v-model="statusFilter"
+            :options="statusFilterOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua status"
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} status dipilih"
+            empty-message="Tidak ada status"
+            size="small"
+            class="w-44"
+            aria-label="Filter status project"
+          >
+            <template #option="{ option }">
+              <div class="flex items-center gap-2">
+                <span
+                  class="size-3 shrink-0 rounded-full border border-line"
+                  :style="{ backgroundColor: option.color ?? 'transparent' }"
+                />
+                <span>{{ option.label }}</span>
+              </div>
+            </template>
+          </MultiSelect>
+
           <InputText
             v-model="search"
             placeholder="Cari project..."
             aria-label="Cari project"
             size="small"
             class="w-40 sm:w-48"
+          />
+
+          <Button
+            v-if="hasActiveFilters"
+            label="Reset filter"
+            icon="pi pi-filter-slash"
+            size="small"
+            variant="text"
+            severity="secondary"
+            class="whitespace-nowrap"
+            @click="resetFilters"
           />
 
           <Button
@@ -355,10 +606,10 @@ onMounted(() => {
       >
         <i class="pi pi-briefcase text-3xl text-fg-muted" />
 
-        <p class="font-medium">{{ search ? 'Project tidak ditemukan' : 'Belum ada project' }}</p>
+        <p class="font-medium">{{ search || hasActiveFilters ? 'Project tidak ditemukan' : 'Belum ada project' }}</p>
 
         <p class="text-sm text-fg-muted">
-          {{ search ? 'Coba kata kunci lain.' : 'Data project akan muncul di sini.' }}
+          {{ search || hasActiveFilters ? 'Coba kata kunci atau filter lain.' : 'Data project akan muncul di sini.' }}
         </p>
       </div>
 
@@ -374,18 +625,45 @@ onMounted(() => {
               <th class="px-5 py-3 font-medium">Project</th>
               <th class="px-5 py-3 font-medium">Customer</th>
               <th class="px-5 py-3 font-medium">Sales</th>
-              <th class="px-5 py-3 text-right font-medium">Nilai proyek</th>
-              <th class="px-5 py-3 font-medium">Estimasi closing</th>
+              <th class="px-5 py-3 text-right font-medium" :aria-sort="ariaSort('nilai_proyek')">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 font-medium hover:text-fg"
+                  @click="toggleSort('nilai_proyek')"
+                >
+                  Nilai proyek
+                  <i :class="sortIcon('nilai_proyek')" class="text-[0.7rem]" />
+                </button>
+              </th>
+              <th class="px-5 py-3 font-medium" :aria-sort="ariaSort('estimasi_closing')">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 font-medium hover:text-fg"
+                  @click="toggleSort('estimasi_closing')"
+                >
+                  Estimasi closing
+                  <i :class="sortIcon('estimasi_closing')" class="text-[0.7rem]" />
+                </button>
+              </th>
               <th class="px-5 py-3 font-medium">Status</th>
               <th class="px-5 py-3 font-medium">Pipeline</th>
-              <th class="px-5 py-3 font-medium">Dibuat</th>
+              <th class="px-5 py-3 font-medium" :aria-sort="ariaSort('created_at')">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 font-medium hover:text-fg"
+                  @click="toggleSort('created_at')"
+                >
+                  Dibuat
+                  <i :class="sortIcon('created_at')" class="text-[0.7rem]" />
+                </button>
+              </th>
               <th class="px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
           </thead>
 
           <tbody class="divide-y divide-line">
             <tr
-              v-for="project in filteredProjects"
+              v-for="project in pagedProjects"
               :key="project.id"
               class="transition-colors hover:bg-sidebar/60"
             >
@@ -429,7 +707,6 @@ onMounted(() => {
                   class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium"
                   :class="pipelineClass(project.pipeline_status)"
                 >
-                  <i v-if="project.pipeline_status === 'Hot Prospek'" class=" mr-1 text-[0.7rem]" />
                   {{ project.pipeline_status }}
                 </span>
                 <span v-else class="text-fg-muted">-</span>
@@ -476,6 +753,17 @@ onMounted(() => {
           </tbody>
         </table>
       </div>
+
+      <Paginator
+        v-if="filteredProjects.length > 0"
+        v-model:first="first"
+        v-model:rows="rows"
+        :total-records="filteredProjects.length"
+        :rows-per-page-options="PAGE_SIZES"
+        template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown CurrentPageReport"
+        current-page-report-template="{first}–{last} dari {totalRecords}"
+        class="border-t border-line"
+      />
 
       <footer class="border-t border-line px-5 py-3 text-xs text-fg-muted">
         Total {{ projects.length }} project
