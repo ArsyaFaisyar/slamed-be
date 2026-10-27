@@ -48,7 +48,9 @@ class RkhFormController extends GetxController {
 
   Future<void> _loadCustomers() async {
     try {
-      customers.assignAll(await _customerRepo.list());
+      // Hanya customer yang sudah disetujui SPV yang boleh dikunjungi.
+      final all = await _customerRepo.list();
+      customers.assignAll(all.where((c) => c.isApproved));
     } catch (e) {
       error.value = errorMessage(e);
     }
