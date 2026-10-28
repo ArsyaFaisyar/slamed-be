@@ -162,8 +162,8 @@ class LkhDetailController extends GetxController {
     if (busy.value || editState == LkhEditState.notOwner) return;
     if (editState == LkhEditState.needsRevert) {
       final ok = await confirmDialog(
-        title: 'Kembalikan ke Belum?',
-        message: 'LKH ini sudah DONE. Agar bisa diubah, statusnya dikembalikan ke BELUM dulu. '
+        title: 'Kembalikan ke OPEN?',
+        message: 'LKH ini sudah DONE. Agar bisa diubah, statusnya dikembalikan ke OPEN dulu. '
             'Setelah selesai mengubah, tandai DONE lagi.',
         confirmLabel: 'Kembalikan',
       );
@@ -185,17 +185,23 @@ class LkhDetailController extends GetxController {
   Future<void> markDone() async {
     if (busy.value) return;
     if (!hasFoto) {
-      showSnack('Foto dokumentasi wajib ada sebelum LKH ditandai DONE.');
+      showSnack('Foto dokumentasi wajib ada sebelum LKH ditandai selesai.');
       return;
     }
     busy.value = true;
+    var ok = false;
     try {
       await _setStatus(AppConstants.statusLkhDone);
-      showSnack('LKH ditandai DONE.');
+      ok = true;
     } catch (e) {
       showSnack(errorMessage(e));
     } finally {
       busy.value = false;
+    }
+    if (ok) {
+      // Tutup halaman dulu. Snackbar yang masih tampil membuat Get.back() hanya menutup snackbar.
+      Get.back();
+      showSnack('LKH ditandai selesai.');
     }
   }
 
@@ -346,24 +352,5 @@ class LkhDetailController extends GetxController {
     } finally {
       busy.value = false;
     }
-  }
-
-  /// Hapus LKH (hanya yang masih BELUM); RKH-nya kembali ke daftar "Perlu LKH".
-  Future<void> remove() async {
-    final ok = await confirmDialog(
-      title: 'Hapus LKH?',
-      message: 'LKH ini akan dihapus permanen dan RKH-nya kembali menunggu LKH.',
-    );
-    if (!ok) return;
-    busy.value = true;
-    try {
-      await _repo.delete(lkh.value.id);
-      showSnack('LKH dihapus.');
-      Get.back();
-    } catch (e) {
-      showSnack(errorMessage(e));
-    } finally {
-      busy.value = false;
-    }
-  }
+  }  
 }
