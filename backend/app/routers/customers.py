@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from pydantic import BaseModel, Field
@@ -9,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import joinedload
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from app.db.database import get_db
@@ -24,6 +25,7 @@ from app.schemas.customer import (
 from app.core.dependencies import get_current_user, require_roles
 from app.core.roles import CUSTOMER_VIEW_ROLES
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 router = APIRouter(
     prefix="/customers",
@@ -63,6 +65,148 @@ def validate_sales(db: Session, sales_id: int | None):
         )
 
 
+WIB = ZoneInfo("Asia/Jakarta")
+
+STATUS_APPROVAL_LABELS = {
+    "PENDING": "Menunggu Persetujuan",
+    "APPROVED": "Disetujui",
+    "REJECTED": "Ditolak",
+}
+
+STATUS_APPROVAL_STYLES = {
+    "PENDING": ("FFF2CC", "7F6000"),
+    "APPROVED": ("E2EFDA", "375623"),
+    "REJECTED": ("F8CBAD", "9C0006"),
+}
+
+
+def to_wib(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(WIB).replace(tzinfo=None)
+
+
+def clean_values(values):
+    return [item.strip() for item in (values or []) if item and item.strip()]
+
+
+def build_customer_workbook(customers, filter_text, exported_by, exported_at):
+    headers = [
+        ("No", 6),
+        ("Nama Instansi", 34),
+        ("Nama PIC", 22),
+        ("Kontak PIC", 18),
+        ("Kota", 18),
+        ("Kategori", 18),
+        ("Area", 18),
+        ("Sales", 22),
+        ("Status Approval", 22),
+        ("Alasan Penolakan", 40),
+        ("Tanggal Dibuat", 20),
+        ("Terakhir Diperbarui", 20),
+    ]
+    last_col = len(headers)
+    last_letter = get_column_letter(last_col)
+    header_row = 5
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Data Customer"
+    sheet.sheet_view.showGridLines = False
+
+    thin = Side(style="thin", color="BFBFBF")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
+    sheet["A1"] = "DATA CUSTOMER"
+    sheet["A1"].font = Font(bold=True, size=16, color="1F4E78")
+    sheet["A1"].alignment = Alignment(horizontal="left", vertical="center")
+    sheet.row_dimensions[1].height = 26
+
+    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
+    sheet["A2"] = f"Filter: {filter_text}"
+    sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=last_col)
+    sheet["A3"] = (
+        f"Diekspor oleh {exported_by} pada "
+        f"{exported_at.strftime('%d-%m-%Y %H:%M')} WIB"
+    )
+    for ref in ("A2", "A3"):
+        sheet[ref].font = Font(size=10, color="595959")
+        sheet[ref].alignment = Alignment(horizontal="left", vertical="center")
+
+    for index, (title, width) in enumerate(headers, start=1):
+        cell = sheet.cell(row=header_row, column=index, value=title)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+        cell.alignment = Alignment(
+            horizontal="center", vertical="center", wrap_text=True
+        )
+        cell.border = border
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.row_dimensions[header_row].height = 24
+
+    zebra = PatternFill(fill_type="solid", fgColor="F2F7FB")
+
+    for number, customer in enumerate(customers, start=1):
+        row = header_row + number
+        status = customer.approval_status
+        values = [
+            number,
+            customer.nama_instansi,
+            customer.nama_pic,
+            str(customer.kontak_pic) if customer.kontak_pic is not None else None,
+            customer.kota,
+            customer.kategori,
+            customer.area_nama,
+            customer.sales_nama,
+            STATUS_APPROVAL_LABELS.get(status, status),
+            customer.rejection_reason,
+            to_wib(customer.created_at),
+            to_wib(customer.updated_at),
+        ]
+
+        for col, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=col, value=value)
+            cell.border = border
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if number % 2 == 0:
+                cell.fill = zebra
+
+        sheet.cell(row=row, column=1).alignment = Alignment(
+            horizontal="center", vertical="top"
+        )
+        sheet.cell(row=row, column=4).number_format = "@"
+        for col in (11, 12):
+            sheet.cell(row=row, column=col).number_format = "dd-mm-yyyy hh:mm"
+            sheet.cell(row=row, column=col).alignment = Alignment(
+                horizontal="center", vertical="top"
+            )
+
+        status_cell = sheet.cell(row=row, column=9)
+        status_cell.alignment = Alignment(horizontal="center", vertical="top")
+        if status in STATUS_APPROVAL_STYLES:
+            fill_color, font_color = STATUS_APPROVAL_STYLES[status]
+            status_cell.fill = PatternFill(fill_type="solid", fgColor=fill_color)
+            status_cell.font = Font(bold=True, color=font_color)
+
+    last_data_row = header_row + len(customers)
+    total_row = last_data_row + 2
+    sheet.cell(row=total_row, column=1, value=f"Total: {len(customers)} customer").font = Font(bold=True)
+
+    sheet.freeze_panes = f"C{header_row + 1}"
+    sheet.auto_filter.ref = f"A{header_row}:{last_letter}{max(last_data_row, header_row)}"
+
+    sheet.page_setup.orientation = "landscape"
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.print_title_rows = f"{header_row}:{header_row}"
+
+    return workbook
+
+
 @router.get("/", response_model=list[CustomerResponse])
 def get_customers(
     db: Session = Depends(get_db),
@@ -82,15 +226,14 @@ def get_customers(
 
 @router.get("/export/excel")
 def export_customer_excel(
-    area: str | None = None,
-    sales: str | None = None,
-    status_approval: str | None = None,
+    area: list[str] | None = Query(None),
+    sales: list[str] | None = Query(None),
+    status_approval: list[str] | None = Query(None),
     tanggal_mulai: date | None = None,
     tanggal_selesai: date | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Validasi rentang tanggal
     if tanggal_mulai and tanggal_selesai:
         if tanggal_mulai > tanggal_selesai:
             raise HTTPException(
@@ -98,160 +241,86 @@ def export_customer_excel(
                 detail="Tanggal mulai tidak boleh melebihi tanggal selesai",
             )
 
-    # Ambil data customer beserta relasi area dan sales
     query = db.query(Customer).options(
         joinedload(Customer.area_rel),
         joinedload(Customer.sales_rel),
     )
 
-    # Hak akses mengikuti endpoint get_customers()
     if current_user.role == "SALES":
-        query = query.filter(
-            Customer.sales_id == current_user.id
-        )
+        query = query.filter(Customer.sales_id == current_user.id)
     elif current_user.role not in CUSTOMER_VIEW_ROLES:
         raise HTTPException(
             status_code=403,
             detail="Kamu tidak memiliki akses ke data customer",
         )
 
-    # Filter berdasarkan nama area
-    if area and area.strip():
+    areas = clean_values(area)
+    sales_names = clean_values(sales)
+    statuses = [item.upper() for item in clean_values(status_approval)]
+
+    if areas:
         query = query.filter(
             Customer.area_rel.has(
-                Area.nama.ilike(f"%{area.strip()}%")
+                func.lower(Area.nama).in_([item.lower() for item in areas])
             )
         )
 
-    # Filter berdasarkan nama sales
-    if sales and sales.strip():
+    if sales_names:
         query = query.filter(
             Customer.sales_rel.has(
-                User.nama.ilike(f"%{sales.strip()}%")
+                func.lower(User.nama).in_([item.lower() for item in sales_names])
             )
         )
 
-    # Filter status approval
-    if status_approval and status_approval.strip():
-        query = query.filter(
-            Customer.approval_status
-            == status_approval.strip().upper()
-        )
+    if statuses:
+        query = query.filter(Customer.approval_status.in_(statuses))
 
-    # Filter tanggal pembuatan customer
     if tanggal_mulai:
-        mulai = datetime.combine(
-            tanggal_mulai,
-            time.min,
-        )
         query = query.filter(
-            Customer.created_at >= mulai
+            Customer.created_at
+            >= datetime.combine(tanggal_mulai, time.min, tzinfo=WIB)
         )
 
     if tanggal_selesai:
-        sampai = datetime.combine(
-            tanggal_selesai + timedelta(days=1),
-            time.min,
-        )
         query = query.filter(
-            Customer.created_at < sampai
+            Customer.created_at
+            < datetime.combine(
+                tanggal_selesai + timedelta(days=1), time.min, tzinfo=WIB
+            )
         )
 
-    data_customer = query.order_by(
-        Customer.id.desc()
-    ).all()
+    data_customer = query.order_by(Customer.id.desc()).all()
 
-    # Buat workbook Excel
-    workbook = Workbook()
-    worksheet = workbook.active
-    worksheet.title = "Data Customer"
+    def join_or_all(values, empty="Semua"):
+        return ", ".join(values) if values else empty
 
-    headers = [
-        "Nama Instansi",
-        "Nama PIC",
-        "Kontak PIC",
-        "Kota",
-        "Kategori",
-        "Area",
-        "Sales",
-        "Status Approval",
-        "Alasan Penolakan",
-        "Tanggal Dibuat",
-        "Terakhir Diperbarui",
-    ]
+    if tanggal_mulai or tanggal_selesai:
+        mulai_text = tanggal_mulai.strftime("%d-%m-%Y") if tanggal_mulai else "..."
+        selesai_text = tanggal_selesai.strftime("%d-%m-%Y") if tanggal_selesai else "..."
+        periode_text = f"{mulai_text} s/d {selesai_text}"
+    else:
+        periode_text = "Semua"
 
-    worksheet.append(headers)
+    filter_text = (
+        f"Area: {join_or_all(areas)} | "
+        f"Sales: {join_or_all(sales_names)} | "
+        f"Status: {join_or_all([STATUS_APPROVAL_LABELS.get(item, item) for item in statuses])} | "
+        f"Periode dibuat: {periode_text}"
+    )
 
-    # Styling header
-    for cell in worksheet[1]:
-        cell.font = Font(
-            bold=True,
-            color="FFFFFF",
-        )
-        cell.fill = PatternFill(
-            fill_type="solid",
-            fgColor="1F4E78",
-        )
-        cell.alignment = Alignment(
-            horizontal="center",
-            vertical="center",
-        )
+    now = datetime.now(WIB)
+    workbook = build_customer_workbook(
+        data_customer,
+        filter_text,
+        current_user.nama,
+        now,
+    )
 
-    # Isi data
-    for customer in data_customer:
-        worksheet.append([
-            customer.nama_instansi,
-            customer.nama_pic,
-            customer.kontak_pic,
-            customer.kota,
-            customer.kategori,
-            customer.area_nama,
-            customer.sales_nama,
-            customer.approval_status,
-            customer.rejection_reason,
-            (
-                customer.created_at.replace(tzinfo=None)
-                if customer.created_at else None
-            ),
-            (
-                customer.updated_at.replace(tzinfo=None)
-                if customer.updated_at else None
-            ),
-        ])
-
-    # Format tanggal Excel
-    for row in worksheet.iter_rows(
-        min_row=2,
-        min_col=10,
-        max_col=11,
-    ):
-        for cell in row:
-            cell.number_format = "dd-mm-yyyy hh:mm:ss"
-
-    # Atur lebar kolom berdasarkan isi
-    for column_cells in worksheet.columns:
-        max_length = max(
-            len(str(cell.value or ""))
-            for cell in column_cells
-        )
-        column_letter = get_column_letter(
-            column_cells[0].column
-        )
-        worksheet.column_dimensions[
-            column_letter
-        ].width = min(max_length + 3, 40)
-
-    worksheet.freeze_panes = "A2"
-    worksheet.auto_filter.ref = worksheet.dimensions
-
-    # Simpan workbook ke memory
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
 
-    filename = (
-        f"data_customer_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    )
+    filename = f"Data_Customer_{now.strftime('%d-%m-%Y_%H%M')}.xlsx"
 
     return StreamingResponse(
         output,
@@ -260,12 +329,9 @@ def export_customer_excel(
             "spreadsheetml.sheet"
         ),
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="{filename}"'
-            )
+            "Content-Disposition": f'attachment; filename="{filename}"'
         },
     )
-
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)

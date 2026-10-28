@@ -2,11 +2,11 @@ import os
 import uuid
 from io import BytesIO
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 
@@ -14,6 +14,7 @@ from app.db.database import get_db
 from app.models.rkh import RKH
 from app.models.lkh import LKH
 from app.models.user import User
+from app.models.customer import Customer
 from app.models.project_prospek import ProjectProspek
 from app.models.project_status_history import ProjectStatusHistory
 from app.models.project_status import ProjectStatus
@@ -21,9 +22,165 @@ from app.schemas.lkh import LKHCreate, LKHUpdate, LKHResponse,LKHExportSchema
 from app.core.dependencies import get_current_user, require_roles
 from app.utils.project_log import catat_project_log
 from app.core.roles import LKH_VIEW_ROLES
-from datetime import date
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 router = APIRouter(prefix="/lkh", tags=["LKH"])
+
+WIB = ZoneInfo("Asia/Jakarta")
+
+STATUS_LKH_LABELS = {
+    "NOT_YET": "Open",
+    "DONE": "Done",
+}
+
+STATUS_LKH_STYLES = {
+    "NOT_YET": ("FFF2CC", "7F6000"),
+    "DONE": ("E2EFDA", "375623"),
+}
+
+
+def to_wib(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(WIB).replace(tzinfo=None)
+
+
+def clean_values(values):
+    return [item.strip() for item in (values or []) if item and item.strip()]
+
+
+def build_lkh_workbook(rows, filter_text, exported_by, exported_at):
+    headers = [
+        ("No", 6),
+        ("Tanggal Kunjungan", 18),
+        ("Sales", 20),
+        ("Customer", 28),
+        ("Project", 28),
+        ("Kegiatan", 28),
+        ("Nama PIC", 20),
+        ("Nomor PIC", 17),
+        ("Hasil Kunjungan", 44),
+        ("Tindak Lanjut", 34),
+        ("Tanggal Follow Up", 18),
+        ("Status LKH", 14),
+        ("Latitude", 14),
+        ("Longitude", 14),
+        ("Dibuat Pada", 19),
+        ("Diperbarui Pada", 19),
+    ]
+    last_col = len(headers)
+    last_letter = get_column_letter(last_col)
+    header_row = 5
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Data LKH"
+    sheet.sheet_view.showGridLines = False
+
+    thin = Side(style="thin", color="BFBFBF")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
+    sheet["A1"] = "DATA LAPORAN KEGIATAN HARIAN (LKH)"
+    sheet["A1"].font = Font(bold=True, size=16, color="1F4E78")
+    sheet["A1"].alignment = Alignment(horizontal="left", vertical="center")
+    sheet.row_dimensions[1].height = 26
+
+    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
+    sheet["A2"] = f"Filter: {filter_text}"
+    sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=last_col)
+    sheet["A3"] = (
+        f"Diekspor oleh {exported_by} pada "
+        f"{exported_at.strftime('%d-%m-%Y %H:%M')} WIB"
+    )
+    for ref in ("A2", "A3"):
+        sheet[ref].font = Font(size=10, color="595959")
+        sheet[ref].alignment = Alignment(horizontal="left", vertical="center")
+
+    for index, (title, width) in enumerate(headers, start=1):
+        cell = sheet.cell(row=header_row, column=index, value=title)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+        cell.alignment = Alignment(
+            horizontal="center", vertical="center", wrap_text=True
+        )
+        cell.border = border
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.row_dimensions[header_row].height = 24
+
+    zebra = PatternFill(fill_type="solid", fgColor="F2F7FB")
+
+    for number, item in enumerate(rows, start=1):
+        row = header_row + number
+        lkh = item["lkh"]
+        status = lkh.status_lkh
+        values = [
+            number,
+            lkh.tanggal_kunjungan,
+            item["sales"],
+            item["customer"],
+            item["project"],
+            item["kegiatan"],
+            lkh.nama_pic,
+            str(lkh.nomor_pic) if lkh.nomor_pic is not None else None,
+            lkh.hasil_kunjungan,
+            lkh.tindak_lanjut,
+            lkh.tanggal_follow_up,
+            STATUS_LKH_LABELS.get(status, status),
+            float(lkh.latitude) if lkh.latitude is not None else None,
+            float(lkh.longitude) if lkh.longitude is not None else None,
+            to_wib(lkh.created_at),
+            to_wib(lkh.updated_at),
+        ]
+
+        for col, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row, column=col, value=value)
+            cell.border = border
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if number % 2 == 0:
+                cell.fill = zebra
+
+        center = Alignment(horizontal="center", vertical="top")
+        sheet.cell(row=row, column=1).alignment = center
+        for col in (2, 11):
+            sheet.cell(row=row, column=col).number_format = "dd-mm-yyyy"
+            sheet.cell(row=row, column=col).alignment = center
+        sheet.cell(row=row, column=8).number_format = "@"
+        for col in (13, 14):
+            sheet.cell(row=row, column=col).number_format = "0.000000"
+        for col in (15, 16):
+            sheet.cell(row=row, column=col).number_format = "dd-mm-yyyy hh:mm"
+            sheet.cell(row=row, column=col).alignment = center
+
+        status_cell = sheet.cell(row=row, column=12)
+        status_cell.alignment = center
+        if status in STATUS_LKH_STYLES:
+            fill_color, font_color = STATUS_LKH_STYLES[status]
+            status_cell.fill = PatternFill(fill_type="solid", fgColor=fill_color)
+            status_cell.font = Font(bold=True, color=font_color)
+
+    last_data_row = header_row + len(rows)
+    total_cell = sheet.cell(
+        row=last_data_row + 2, column=1, value=f"Total: {len(rows)} laporan"
+    )
+    total_cell.font = Font(bold=True)
+
+    sheet.freeze_panes = f"C{header_row + 1}"
+    sheet.auto_filter.ref = (
+        f"A{header_row}:{last_letter}{max(last_data_row, header_row)}"
+    )
+
+    sheet.page_setup.orientation = "landscape"
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.print_title_rows = f"{header_row}:{header_row}"
+
+    return workbook
+
 
 def get_lkh_query(db: Session, current_user: User):
     query = db.query(LKH)
@@ -63,7 +220,7 @@ def get_lkh(
 
 @router.get("/export/excel")
 def export_lkh_excel(
-    status_lkh: str | None = None,
+    status_lkh: list[str] | None = Query(None),
     tanggal_mulai: date | None = None,
     tanggal_selesai: date | None = None,
     nama_pic: str | None = None,
@@ -72,10 +229,9 @@ def export_lkh_excel(
 ):
     query = get_lkh_query(db, current_user)
 
-    # Validasi filter
-    if status_lkh is not None:
-        status_lkh = status_lkh.upper()
-        if status_lkh not in ("DONE", "NOT_YET"):
+    statuses = [item.upper() for item in clean_values(status_lkh)]
+    for item in statuses:
+        if item not in STATUS_LKH_LABELS:
             raise HTTPException(
                 status_code=400,
                 detail="Status harus DONE atau NOT_YET",
@@ -91,117 +247,92 @@ def export_lkh_excel(
             detail="Tanggal mulai tidak boleh melebihi tanggal selesai",
         )
 
-    # Filter berdasarkan RKH
+    if statuses:
+        query = query.filter(LKH.status_lkh.in_(statuses))
 
-    # Filter berdasarkan status
-    if status_lkh is not None:
-        query = query.filter(LKH.status_lkh == status_lkh)
-
-    # Filter berdasarkan tanggal kunjungan
     if tanggal_mulai is not None:
-        query = query.filter(
-            LKH.tanggal_kunjungan >= tanggal_mulai
-        )
+        query = query.filter(LKH.tanggal_kunjungan >= tanggal_mulai)
 
     if tanggal_selesai is not None:
-        query = query.filter(
-            LKH.tanggal_kunjungan <= tanggal_selesai
+        query = query.filter(LKH.tanggal_kunjungan <= tanggal_selesai)
+
+    pic = nama_pic.strip() if nama_pic else ""
+    if pic:
+        query = query.filter(LKH.nama_pic.ilike(f"%{pic}%"))
+
+    data_lkh = query.order_by(LKH.tanggal_kunjungan.desc(), LKH.id.desc()).all()
+
+    rkh_map = {}
+    customer_map = {}
+    project_map = {}
+    user_map = {}
+
+    if data_lkh:
+        rkh_map = {
+            item.id: item
+            for item in db.query(RKH).filter(
+                RKH.id.in_({lkh.rkh_id for lkh in data_lkh})
+            ).all()
+        }
+        customer_ids = {rkh.customer_id for rkh in rkh_map.values() if rkh.customer_id}
+        project_ids = {rkh.project_id for rkh in rkh_map.values() if rkh.project_id}
+        sales_ids = {lkh.sales_id for lkh in data_lkh if lkh.sales_id}
+
+        if customer_ids:
+            customer_map = {
+                item.id: item.nama_instansi
+                for item in db.query(Customer).filter(Customer.id.in_(customer_ids)).all()
+            }
+        if project_ids:
+            project_map = {
+                item.id: item.nama_project
+                for item in db.query(ProjectProspek).filter(ProjectProspek.id.in_(project_ids)).all()
+            }
+        if sales_ids:
+            user_map = {
+                item.id: item.nama
+                for item in db.query(User).filter(User.id.in_(sales_ids)).all()
+            }
+
+    rows = []
+    for lkh in data_lkh:
+        rkh = rkh_map.get(lkh.rkh_id)
+        rows.append(
+            {
+                "lkh": lkh,
+                "sales": user_map.get(lkh.sales_id),
+                "customer": customer_map.get(rkh.customer_id) if rkh else None,
+                "project": project_map.get(rkh.project_id) if rkh else None,
+                "kegiatan": rkh.judul_kegiatan if rkh else None,
+            }
         )
 
-    # Filter berdasarkan nama PIC
-    if nama_pic and nama_pic.strip():
-        query = query.filter(
-            LKH.nama_pic.ilike(f"%{nama_pic.strip()}%")
-        )
+    if tanggal_mulai or tanggal_selesai:
+        mulai_text = tanggal_mulai.strftime("%d-%m-%Y") if tanggal_mulai else "..."
+        selesai_text = tanggal_selesai.strftime("%d-%m-%Y") if tanggal_selesai else "..."
+        periode_text = f"{mulai_text} s/d {selesai_text}"
+    else:
+        periode_text = "Semua"
 
-    data_lkh = query.order_by(LKH.id.desc()).all()
+    status_text = (
+        ", ".join(STATUS_LKH_LABELS[item] for item in statuses)
+        if statuses
+        else "Semua"
+    )
+    filter_text = (
+        f"Status: {status_text} | "
+        f"Nama PIC: {pic or 'Semua'} | "
+        f"Periode kunjungan: {periode_text}"
+    )
 
-    # Buat workbook Excel
-    workbook = Workbook()
-    worksheet = workbook.active
-    worksheet.title = "Data LKH"
+    now = datetime.now(WIB)
+    workbook = build_lkh_workbook(rows, filter_text, current_user.nama, now)
 
-    headers = [
-        "Tanggal Kunjungan",
-        "Tanggal Follow Up",
-        "Hasil Kunjungan",
-        "Status LKH",
-        "Tindak Lanjut",
-        "Nama PIC",
-        "Nomor PIC",
-        "Latitude",
-        "Longitude",
-        "Dibuat Pada",
-        "Diperbarui Pada",
-    ]
-
-    worksheet.append(headers)
-
-    # Styling header
-    for cell in worksheet[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill(
-            fill_type="solid",
-            fgColor="1565C0",
-        )
-        cell.alignment = Alignment(
-            horizontal="center",
-            vertical="center",
-        )
-
-    # Isi data hasil filter
-    for item in data_lkh:
-        worksheet.append([
-            item.tanggal_kunjungan,
-            item.tanggal_follow_up,
-            item.hasil_kunjungan,
-            item.status_lkh,
-            item.tindak_lanjut,
-            item.nama_pic,
-            item.nomor_pic,
-            float(item.latitude)
-            if item.latitude is not None else None,
-            float(item.longitude)
-            if item.longitude is not None else None,
-            item.created_at.replace(tzinfo=None)
-            if item.created_at else None,
-            item.updated_at.replace(tzinfo=None)
-            if item.updated_at else None,
-        ])
-
-    # Atur lebar kolom
-    for column_cells in worksheet.columns:
-        column_letter = get_column_letter(
-            column_cells[0].column
-        )
-
-        max_length = max(
-            (
-                len(str(cell.value))
-                if cell.value is not None else 0
-            )
-            for cell in column_cells
-        )
-
-        worksheet.column_dimensions[column_letter].width = min(
-            max(max_length + 2, 15),
-            40,
-        )
-
-    worksheet.freeze_panes = "A2"
-    worksheet.auto_filter.ref = worksheet.dimensions
-
-    for row in worksheet.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(
-                vertical="top",
-                wrap_text=True,
-            )
-
-    # Simpan Excel ke memory
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
+
+    filename = f"Data_LKH_{now.strftime('%d-%m-%Y_%H%M')}.xlsx"
 
     return StreamingResponse(
         output,
@@ -210,9 +341,10 @@ def export_lkh_excel(
             "spreadsheetml.sheet"
         ),
         headers={
-            "Content-Disposition": 'attachment; filename="data_lkh.xlsx"'
+            "Content-Disposition": f'attachment; filename="{filename}"'
         },
     )
+
 
 @router.get("/{lkh_id}", response_model=LKHResponse)
 def get_lkh_detail(

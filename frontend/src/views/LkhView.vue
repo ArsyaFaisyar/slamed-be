@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import InputText from "primevue/inputtext";
+import MultiSelect from "primevue/multiselect";
+import Paginator, { type PageState } from "primevue/paginator";
 import Select from "primevue/select";
 import Button from "primevue/button";
 import Message from "primevue/message";
@@ -9,6 +11,8 @@ import ConfirmDialog from "primevue/confirmdialog";
 import Menu from "primevue/menu";
 import type { MenuItem } from "primevue/menuitem";
 import { useConfirm } from "primevue/useconfirm";
+
+import LkhExportDialog from "../components/LkhPage/LkhExportDialog.vue";
 
 import {
   deleteLkh,
@@ -71,6 +75,23 @@ const requestListLoaded = ref(false);
 
 const search = ref("");
 const stateFilter = ref<string | null>(null);
+const salesFilter = ref<number[]>([]);
+const customerFilter = ref<number[]>([]);
+const first = ref(0);
+const rows = ref(10);
+const rowsOptions = [10, 25, 50];
+
+type SortKey = "tanggal_rencana" | "tanggal_kunjungan";
+const sortKey = ref<SortKey | null>(null);
+const sortDir = ref<1 | -1>(1);
+const exportVisible = ref(false);
+const exportInitialStatuses = computed(() =>
+  stateFilter.value === "DONE"
+    ? ["DONE"]
+    : stateFilter.value === "OPEN"
+      ? ["NOT_YET"]
+      : [],
+);
 const loading = ref(false);
 const errorMessage = ref("");
 const actionError = ref("");
@@ -134,11 +155,51 @@ function stateOf(rkh: Rkh): string {
   return isLkhDone(lkhOf(rkh)) ? "DONE" : "OPEN";
 }
 
+const salesOptions = computed(() =>
+  [...new Set(rkhList.value.map((rkh) => rkh.sales_id))]
+    .map((id) => ({
+      value: id,
+      label: userNames.value.get(id) ?? `ID ${id}`,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label)),
+);
+
+const customerOptions = computed(() =>
+  [...new Set(rkhList.value.map((rkh) => rkh.customer_id))]
+    .map((id) => ({
+      value: id,
+      label: customerNames.value.get(id) ?? `ID ${id}`,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label)),
+);
+
+const hasFilter = computed(
+  () =>
+    Boolean(search.value.trim()) ||
+    Boolean(stateFilter.value) ||
+    salesFilter.value.length > 0 ||
+    customerFilter.value.length > 0,
+);
+
 const filteredRkh = computed(() => {
   const keyword = search.value.trim().toLowerCase();
 
   return rkhList.value.filter((rkh) => {
     if (stateFilter.value && stateOf(rkh) !== stateFilter.value) {
+      return false;
+    }
+
+    if (
+      salesFilter.value.length > 0 &&
+      !salesFilter.value.includes(rkh.sales_id)
+    ) {
+      return false;
+    }
+
+    if (
+      customerFilter.value.length > 0 &&
+      !customerFilter.value.includes(rkh.customer_id)
+    ) {
       return false;
     }
 
@@ -156,6 +217,85 @@ const filteredRkh = computed(() => {
     );
   });
 });
+
+function sortValue(rkh: Rkh, key: SortKey): number | null {
+  const raw =
+    key === "tanggal_rencana"
+      ? rkh.tanggal_rencana
+      : lkhOf(rkh)?.tanggal_kunjungan;
+
+  if (!raw) return null;
+
+  const time = Date.parse(raw);
+  return Number.isNaN(time) ? null : time;
+}
+
+const sortedRkh = computed(() => {
+  const key = sortKey.value;
+  if (!key) return filteredRkh.value;
+
+  const direction = sortDir.value;
+
+  return [...filteredRkh.value].sort((a, b) => {
+    const left = sortValue(a, key);
+    const right = sortValue(b, key);
+
+    if (left === null && right === null) return 0;
+    if (left === null) return 1;
+    if (right === null) return -1;
+
+    return (left - right) * direction;
+  });
+});
+
+const pagedRkh = computed(() =>
+  sortedRkh.value.slice(first.value, first.value + rows.value),
+);
+
+function toggleSort(key: SortKey) {
+  if (sortKey.value !== key) {
+    sortKey.value = key;
+    sortDir.value = 1;
+  } else if (sortDir.value === 1) {
+    sortDir.value = -1;
+  } else {
+    sortKey.value = null;
+    sortDir.value = 1;
+  }
+}
+
+function sortIcon(key: SortKey) {
+  if (sortKey.value !== key) return "pi-sort-alt opacity-50";
+  return sortDir.value === 1
+    ? "pi-sort-amount-up-alt text-brand"
+    : "pi-sort-amount-down text-brand";
+}
+
+function ariaSort(key: SortKey) {
+  if (sortKey.value !== key) return "none";
+  return sortDir.value === 1 ? "ascending" : "descending";
+}
+
+function onPage(event: PageState) {
+  first.value = event.first;
+  rows.value = event.rows;
+}
+
+watch(
+  [search, stateFilter, salesFilter, customerFilter, sortKey, sortDir],
+  () => {
+    first.value = 0;
+  },
+);
+
+watch(
+  () => sortedRkh.value.length,
+  (total) => {
+    if (total > 0 && first.value >= total) {
+      first.value = Math.floor((total - 1) / rows.value) * rows.value;
+    }
+  },
+);
 
 const REQUEST_STATUS = [
   "request penawaran",
@@ -369,7 +509,7 @@ onMounted(fetchData);
         <div>
           <h2 class="font-semibold">Laporan kegiatan harian</h2>
           <p class="mt-1 text-sm text-fg-muted">
-            {{ filteredRkh.length }} kegiatan ditampilkan
+            {{ sortedRkh.length }} kegiatan ditampilkan
           </p>
         </div>
 
@@ -386,12 +526,51 @@ onMounted(fetchData);
             aria-label="Filter status LKH"
           />
 
+          <MultiSelect
+            v-if="!isSales"
+            v-model="salesFilter"
+            :options="salesOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua sales"
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} sales dipilih"
+            filter
+            size="small"
+            class="w-44"
+            aria-label="Filter sales"
+          />
+
+          <MultiSelect
+            v-model="customerFilter"
+            :options="customerOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Semua customer"
+            display="comma"
+            :max-selected-labels="1"
+            selected-items-label="{0} customer dipilih"
+            filter
+            size="small"
+            class="w-48"
+            aria-label="Filter customer"
+          />
+
           <InputText
             v-model="search"
             placeholder="Cari kegiatan..."
             aria-label="Cari kegiatan"
             size="small"
             class="w-40 sm:w-48"
+          />
+
+          <Button
+            label="Export Excel"
+            icon="pi pi-file-excel"
+            size="small"
+            class="whitespace-nowrap !border-[#217346] !bg-[#217346] !text-white hover:!border-[#185C37] hover:!bg-[#185C37]"
+            @click="exportVisible = true"
           />
         </div>
       </div>
@@ -405,14 +584,14 @@ onMounted(fetchData);
       </div>
 
       <div
-        v-else-if="!errorMessage && filteredRkh.length === 0"
+        v-else-if="!errorMessage && sortedRkh.length === 0"
         class="flex flex-col items-center justify-center gap-2 p-12 text-center"
       >
         <i class="pi pi-clipboard text-3xl text-fg-muted" />
 
         <p class="font-medium">
           {{
-            search || stateFilter
+            hasFilter
               ? "Kegiatan tidak ditemukan"
               : "Belum ada RKH"
           }}
@@ -420,7 +599,7 @@ onMounted(fetchData);
 
         <p class="text-sm text-fg-muted">
           {{
-            search || stateFilter
+            hasFilter
               ? "Coba kata kunci atau filter lain."
               : "Buat RKH terlebih dahulu, lalu isi LKH-nya di sini."
           }}
@@ -436,12 +615,36 @@ onMounted(fetchData);
         <table class="w-full min-w-[1100px] text-left text-sm">
           <thead class="bg-sidebar text-fg-muted">
             <tr>
-              <th class="px-5 py-3 font-medium">Tanggal rencana</th>
+              <th
+                class="px-5 py-3 font-medium"
+                :aria-sort="ariaSort('tanggal_rencana')"
+              >
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 font-medium hover:text-fg"
+                  @click="toggleSort('tanggal_rencana')"
+                >
+                  Tanggal rencana
+                  <i class="pi text-xs" :class="sortIcon('tanggal_rencana')" />
+                </button>
+              </th>
               <th class="px-5 py-3 font-medium">Kegiatan</th>
               <th v-if="!isSales" class="px-5 py-3 font-medium">Sales</th>
               <th class="px-5 py-3 font-medium">Customer</th>
               <th class="px-5 py-3 font-medium">Project</th>
-              <th class="px-5 py-3 font-medium">Tanggal kunjungan</th>
+              <th
+                class="px-5 py-3 font-medium"
+                :aria-sort="ariaSort('tanggal_kunjungan')"
+              >
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 font-medium hover:text-fg"
+                  @click="toggleSort('tanggal_kunjungan')"
+                >
+                  Tanggal kunjungan
+                  <i class="pi text-xs" :class="sortIcon('tanggal_kunjungan')" />
+                </button>
+              </th>
               <th class="px-5 py-3 font-medium">Status</th>
               <th class="w-44 px-5 py-3 text-center font-medium">Aksi</th>
             </tr>
@@ -449,7 +652,7 @@ onMounted(fetchData);
 
           <tbody class="divide-y divide-line">
             <tr
-              v-for="rkh in filteredRkh"
+              v-for="rkh in pagedRkh"
               :key="rkh.id"
               class="transition-colors hover:bg-sidebar/60"
             >
@@ -555,11 +758,34 @@ onMounted(fetchData);
         </table>
       </div>
 
-      <footer class="border-t border-line px-5 py-3 text-xs text-fg-muted">
-        Total {{ rkhList.length }} kegiatan
+      <footer
+        class="flex flex-col gap-2 border-t border-line px-5 py-3 text-xs text-fg-muted sm:flex-row sm:items-center sm:justify-between"
+      >
+        <span>
+          Total {{ rkhList.length }} kegiatan
+          <template v-if="hasFilter">
+            · {{ sortedRkh.length }} sesuai filter
+          </template>
+        </span>
+
+        <Paginator
+          v-if="sortedRkh.length > rowsOptions[0]"
+          :first="first"
+          :rows="rows"
+          :total-records="sortedRkh.length"
+          :rows-per-page-options="rowsOptions"
+          template="FirstPageLink PrevPageLink PageLinks NextPageLink RowsPerPageDropdown"
+          class="!bg-transparent !p-0"
+          @page="onPage"
+        />
       </footer>
     </section>
 
     <Menu ref="rowMenu" :model="rowMenuItems" popup />
+
+    <LkhExportDialog
+      v-model:visible="exportVisible"
+      :initial-statuses="exportInitialStatuses"
+    />
   </div>
 </template>
