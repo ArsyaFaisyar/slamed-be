@@ -27,7 +27,9 @@ class RequestPenawaranItem(Base):
     catatan_sales = Column(Text, nullable=True)
     jumlah = Column(Numeric(12, 2), nullable=False, default=1)
     satuan = Column(String(50), nullable=False, default="Unit")
-    
+    gambar_path = Column(String, nullable=True)
+    link_marketplace = Column(String, nullable=True)
+
     harga_pagu = Column(Numeric(15, 2), nullable=True)
     harga_modal = Column(Numeric(15, 2), nullable=True)
     harga_jual = Column(Numeric(15, 2), nullable=True)
