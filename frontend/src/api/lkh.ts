@@ -44,13 +44,21 @@ export interface CreateLkhPayload {
   longitude?: number | null;
 }
 
+  export interface LkhExportParams {
+    status_lkh?: string[];
+    customer_id?: number[];
+    nama_pic?: string | null;
+    tanggal_mulai?: string | null;
+    tanggal_selesai?: string | null;
+  }
+
 export type UpdateLkhPayload = Partial<Omit<CreateLkhPayload, "rkh_id">> & {
   status_lkh?: string;
 };
 
 export interface LkhExportParams {
-  status_lkh?: string[];
-  nama_pic?: string | null;
+  sales_id?: number[];
+  customer_id?: number[];
   tanggal_mulai?: string | null;
   tanggal_selesai?: string | null;
 }

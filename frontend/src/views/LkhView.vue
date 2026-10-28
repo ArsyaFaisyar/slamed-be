@@ -785,7 +785,8 @@ onMounted(fetchData);
 
     <LkhExportDialog
       v-model:visible="exportVisible"
-      :initial-statuses="exportInitialStatuses"
+      :sales-options="salesOptions"
+      :customer-options="customerOptions"
     />
   </div>
 </template>

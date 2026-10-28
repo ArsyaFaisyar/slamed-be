@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import joinedload
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.db.database import get_db
@@ -93,67 +93,41 @@ def clean_values(values):
 
 
 def build_customer_workbook(customers, filter_text, exported_by, exported_at):
-    headers = [
-        ("No", 6),
-        ("Nama Instansi", 34),
-        ("Nama PIC", 22),
-        ("Kontak PIC", 18),
-        ("Kota", 18),
-        ("Kategori", 18),
-        ("Area", 18),
-        ("Sales", 22),
-        ("Status Approval", 22),
-        ("Alasan Penolakan", 40),
-        ("Tanggal Dibuat", 20),
-        ("Terakhir Diperbarui", 20),
-    ]
-    last_col = len(headers)
-    last_letter = get_column_letter(last_col)
-    header_row = 5
-
     workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Data Customer"
-    sheet.sheet_view.showGridLines = False
+    worksheet = workbook.active
+    worksheet.title = "Data Customer"
 
-    thin = Side(style="thin", color="BFBFBF")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    headers = [
+        "Nama Instansi",
+        "Nama PIC",
+        "Kontak PIC",
+        "Kota",
+        "Kategori",
+        "Area",
+        "Sales",
+        "Status Approval",
+        "Alasan Penolakan",
+        "Tanggal Dibuat",
+        "Terakhir Diperbarui",
+    ]
 
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
-    sheet["A1"] = "DATA CUSTOMER"
-    sheet["A1"].font = Font(bold=True, size=16, color="1F4E78")
-    sheet["A1"].alignment = Alignment(horizontal="left", vertical="center")
-    sheet.row_dimensions[1].height = 26
+    worksheet.append(headers)
 
-    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
-    sheet["A2"] = f"Filter: {filter_text}"
-    sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=last_col)
-    sheet["A3"] = (
-        f"Diekspor oleh {exported_by} pada "
-        f"{exported_at.strftime('%d-%m-%Y %H:%M')} WIB"
-    )
-    for ref in ("A2", "A3"):
-        sheet[ref].font = Font(size=10, color="595959")
-        sheet[ref].alignment = Alignment(horizontal="left", vertical="center")
-
-    for index, (title, width) in enumerate(headers, start=1):
-        cell = sheet.cell(row=header_row, column=index, value=title)
+    for cell in worksheet[1]:
         cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill(fill_type="solid", fgColor="1F4E78")
-        cell.alignment = Alignment(
-            horizontal="center", vertical="center", wrap_text=True
+        cell.fill = PatternFill(
+            fill_type="solid",
+            fgColor="1F4E78",
         )
-        cell.border = border
-        sheet.column_dimensions[get_column_letter(index)].width = width
-    sheet.row_dimensions[header_row].height = 24
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+        )
 
-    zebra = PatternFill(fill_type="solid", fgColor="F2F7FB")
-
-    for number, customer in enumerate(customers, start=1):
-        row = header_row + number
+    for customer in customers:
         status = customer.approval_status
-        values = [
-            number,
+
+        worksheet.append([
             customer.nama_instansi,
             customer.nama_pic,
             str(customer.kontak_pic) if customer.kontak_pic is not None else None,
@@ -165,44 +139,27 @@ def build_customer_workbook(customers, filter_text, exported_by, exported_at):
             customer.rejection_reason,
             to_wib(customer.created_at),
             to_wib(customer.updated_at),
-        ]
+        ])
 
-        for col, value in enumerate(values, start=1):
-            cell = sheet.cell(row=row, column=col, value=value)
-            cell.border = border
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-            if number % 2 == 0:
-                cell.fill = zebra
+    for row in worksheet.iter_rows(min_row=2):
+        row[2].number_format = "@"
+        row[9].number_format = "dd-mm-yyyy hh:mm:ss"
+        row[10].number_format = "dd-mm-yyyy hh:mm:ss"
 
-        sheet.cell(row=row, column=1).alignment = Alignment(
-            horizontal="center", vertical="top"
+    for column_cells in worksheet.columns:
+        max_length = max(
+            len(str(cell.value or ""))
+            for cell in column_cells
         )
-        sheet.cell(row=row, column=4).number_format = "@"
-        for col in (11, 12):
-            sheet.cell(row=row, column=col).number_format = "dd-mm-yyyy hh:mm"
-            sheet.cell(row=row, column=col).alignment = Alignment(
-                horizontal="center", vertical="top"
-            )
+        column_letter = get_column_letter(
+            column_cells[0].column
+        )
+        worksheet.column_dimensions[
+            column_letter
+        ].width = min(max_length + 3, 40)
 
-        status_cell = sheet.cell(row=row, column=9)
-        status_cell.alignment = Alignment(horizontal="center", vertical="top")
-        if status in STATUS_APPROVAL_STYLES:
-            fill_color, font_color = STATUS_APPROVAL_STYLES[status]
-            status_cell.fill = PatternFill(fill_type="solid", fgColor=fill_color)
-            status_cell.font = Font(bold=True, color=font_color)
-
-    last_data_row = header_row + len(customers)
-    total_row = last_data_row + 2
-    sheet.cell(row=total_row, column=1, value=f"Total: {len(customers)} customer").font = Font(bold=True)
-
-    sheet.freeze_panes = f"C{header_row + 1}"
-    sheet.auto_filter.ref = f"A{header_row}:{last_letter}{max(last_data_row, header_row)}"
-
-    sheet.page_setup.orientation = "landscape"
-    sheet.page_setup.fitToWidth = 1
-    sheet.page_setup.fitToHeight = 0
-    sheet.sheet_properties.pageSetUpPr.fitToPage = True
-    sheet.print_title_rows = f"{header_row}:{header_row}"
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
 
     return workbook
 
@@ -380,8 +337,6 @@ def create_customer(
                 detail="Akun Anda belum memiliki area",
             )
 
-        # Sales hanya bisa mengajukan customer untuk dirinya sendiri, di areanya sendiri.
-        # sales_id dan area_id dari request diabaikan.
         customer = Customer(
             **data.model_dump(exclude={"sales_id", "area_id"}),
             sales_id=current_user.id,
@@ -440,7 +395,6 @@ def update_customer(
                 detail="Customer yang sudah disetujui tidak bisa diedit oleh Sales",
             )
 
-        # Sales tidak boleh memindahkan kepemilikan maupun area.
         updates.pop("sales_id", None)
         updates.pop("area_id", None)
 
@@ -454,7 +408,6 @@ def update_customer(
     for field, value in updates.items():
         setattr(customer, field, value)
 
-    # Setiap perubahan oleh Sales mengajukan ulang customer ke SPV.
     if current_user.role == "SALES":
         customer.approval_status = "PENDING"
         customer.verified_by = None

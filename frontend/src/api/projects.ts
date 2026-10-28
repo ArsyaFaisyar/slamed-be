@@ -1,3 +1,4 @@
+import { downloadExcel } from "../utils/exportFile.ts";
 import { http } from "./http";
 import type { ProjectStatus } from "./projectStatuses";
 
@@ -68,3 +69,16 @@ export async function updateProject(id: number, payload: ProjectUpdate): Promise
 export async function deleteProject(id: number): Promise<void> {
   await http.delete(`/projects/${id}`);
 }
+
+export interface ProjectExportParams {
+  sales?: string;
+  customer?: string;
+  status?: string;
+  tanggal_mulai?: string;
+  tanggal_selesai?: string;
+}
+
+export function exportProjectsExcel(params: ProjectExportParams): Promise<void> {
+  return downloadExcel("/projects/export/excel", { ...params }, "project");
+}
+  
