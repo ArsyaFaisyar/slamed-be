@@ -520,28 +520,18 @@ def delete_project(
 @router.get("/export/excel")
 def export_project_excel(
     sales: str | None = None,
+    customer: str | None = None,
     status: str | None = None,
-    pipeline_status: str | None = None,
-    tanggal_mulai: date | None = None,
-    tanggal_selesai: date | None = None,
+    search: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Validasi tanggal
-    if tanggal_mulai and tanggal_selesai:
-        if tanggal_mulai > tanggal_selesai:
-            raise HTTPException(
-                status_code=400,
-                detail="Tanggal mulai tidak boleh melebihi tanggal selesai",
-            )
-
-    # Ambil query project sesuai hak akses user
     query = get_project_query(db, current_user).options(
         joinedload(ProjectProspek.sales_rel),
         joinedload(ProjectProspek.status_rel),
     )
 
-    # Filter nama sales
+    # Filter berdasarkan nama sales
     if sales and sales.strip():
         query = query.filter(
             ProjectProspek.sales_rel.has(
@@ -549,7 +539,18 @@ def export_project_excel(
             )
         )
 
-    # Filter nama status project
+    # Filter berdasarkan nama customer
+    if customer and customer.strip():
+        query = query.join(
+            Customer,
+            ProjectProspek.customer_id == Customer.id,
+        ).filter(
+            Customer.nama_instansi.ilike(
+                f"%{customer.strip()}%"
+            )
+        )
+
+    # Filter berdasarkan status project
     if status and status.strip():
         query = query.filter(
             ProjectProspek.status_rel.has(
@@ -557,27 +558,12 @@ def export_project_excel(
             )
         )
 
-    # Filter pipeline status
-    if pipeline_status and pipeline_status.strip():
+    # Pencarian berdasarkan nama project
+    if search and search.strip():
         query = query.filter(
-            ProjectProspek.pipeline_status
-            == pipeline_status.strip()
-        )
-
-    # Filter tanggal dibuat
-    if tanggal_mulai:
-        mulai = datetime.combine(tanggal_mulai, time.min)
-        query = query.filter(
-            ProjectProspek.created_at >= mulai
-        )
-
-    if tanggal_selesai:
-        sampai = datetime.combine(
-            tanggal_selesai + timedelta(days=1),
-            time.min,
-        )
-        query = query.filter(
-            ProjectProspek.created_at < sampai
+            ProjectProspek.nama_project.ilike(
+                f"%{search.strip()}%"
+            )
         )
 
     projects = query.order_by(
@@ -606,20 +592,18 @@ def export_project_excel(
     worksheet.title = "Data Project"
 
     headers = [
-        "Nama Project",
-        "Nama Customer",
-        "Nama PIC",
-        "Kontak PIC",
-        "Kota",
-        "Nama Sales",
-        "Status Project",
-        "Pipeline Status",
-        "Nilai Proyek",
-        "Estimasi Closing",
-        "Deskripsi",
-        "Tanggal Dibuat",
-        "Terakhir Diperbarui",
-    ]
+    "Nama Project",
+    "Nama Customer",
+    "Kota",
+    "Nama Sales",
+    "Status Project",
+    "Pipeline Status",
+    "Nilai Proyek",
+    "Estimasi Closing",
+    "Deskripsi",
+    "Tanggal Dibuat",
+    "Terakhir Diperbarui",
+]
 
     worksheet.append(headers)
 
@@ -642,8 +626,6 @@ def export_project_excel(
         worksheet.append([
             project.nama_project,
             customer.nama_instansi if customer else None,
-            customer.nama_pic if customer else None,
-            customer.kontak_pic if customer else None,
             customer.kota if customer else None,
             project.sales_rel.nama if project.sales_rel else None,
             project.status_rel.nama if project.status_rel else None,
@@ -667,12 +649,12 @@ def export_project_excel(
 
     # Format kolom nilai proyek dan tanggal
     for row in worksheet.iter_rows(min_row=2):
-        row[9].number_format = '#,##0.00'  # Nilai Proyek
-        row[10].number_format = "dd-mm-yyyy"  # Estimasi Closing
-        row[12].number_format = "dd-mm-yyyy hh:mm:ss"  # Tanggal Dibuat
+        row[6].number_format = '#,##0.00'  # Nilai Proyek
+        row[7].number_format = "dd-mm-yyyy"  # Estimasi Closing
+        row[9].number_format = "dd-mm-yyyy hh:mm:ss"  # Tanggal Dibuat
+        row[10].number_format = "dd-mm-yyyy hh:mm:ss"  # Terakhir Diperbarui
 
-    if len(row) > 13:
-        row[13].number_format = "dd-mm-yyyy hh:mm:ss"  # Terakhir Diperbarui
+
 
     # Atur lebar kolom
     for column_cells in worksheet.columns:

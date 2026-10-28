@@ -24,7 +24,7 @@ class Lkh {
   final DateTime? createdAt;
 
   bool get isDone => statusLkh.toUpperCase() == 'DONE';
-
+  String get statusLabel => isDone ? 'DONE' : 'OPEN';
   factory Lkh.fromJson(Map<String, dynamic> j) => Lkh(
         id: j['id'] as int,
         rkhId: j['rkh_id'] as int,

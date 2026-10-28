@@ -30,9 +30,6 @@ class LkhDetailPage extends GetView<LkhDetailController> {
         actions: [
           if (!editing && c.canEdit) ...[
             IconButton(onPressed: working ? null : c.requestEdit, tooltip: 'Ubah', icon: const Icon(Icons.edit_outlined)),
-            // Hapus hanya untuk LKH yang belum selesai.
-            if (!isDone)
-              IconButton(onPressed: working ? null : c.remove, tooltip: 'Hapus', icon: const Icon(Icons.delete_outline_rounded)),
           ],
         ],
         bottomBar: editing
@@ -98,7 +95,7 @@ class _DetailView extends StatelessWidget {
             if (!l.isDone) ...[
               const SizedBox(height: 16),
               InfoBanner(c.hasFoto
-                  ? 'LKH berstatus BELUM. Ubah datanya bila perlu, lalu tekan "Tandai selesai".'
+                  ? 'LKH berstatus OPEN. Ubah datanya bila perlu, lalu tekan "Tandai selesai".'
                   : 'Foto dokumentasi belum terkirim. Tekan "Lengkapi foto" untuk menyelesaikan LKH.'),
             ],
             const SizedBox(height: 20),
