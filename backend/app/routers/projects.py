@@ -2,6 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from decimal import Decimal
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, case
+from io import BytesIO
+from datetime import datetime, date, time, timedelta
+
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
+
 from app.db.database import get_db
 from app.models.customer import Customer
 from app.models.project_prospek import ProjectProspek
@@ -507,3 +515,199 @@ def delete_project(
     db.commit()
 
     return Response(status_code=204)
+
+
+@router.get("/export/excel")
+def export_project_excel(
+    sales: str | None = None,
+    status: str | None = None,
+    pipeline_status: str | None = None,
+    tanggal_mulai: date | None = None,
+    tanggal_selesai: date | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Validasi tanggal
+    if tanggal_mulai and tanggal_selesai:
+        if tanggal_mulai > tanggal_selesai:
+            raise HTTPException(
+                status_code=400,
+                detail="Tanggal mulai tidak boleh melebihi tanggal selesai",
+            )
+
+    # Ambil query project sesuai hak akses user
+    query = get_project_query(db, current_user).options(
+        joinedload(ProjectProspek.sales_rel),
+        joinedload(ProjectProspek.status_rel),
+    )
+
+    # Filter nama sales
+    if sales and sales.strip():
+        query = query.filter(
+            ProjectProspek.sales_rel.has(
+                User.nama.ilike(f"%{sales.strip()}%")
+            )
+        )
+
+    # Filter nama status project
+    if status and status.strip():
+        query = query.filter(
+            ProjectProspek.status_rel.has(
+                ProjectStatus.nama.ilike(f"%{status.strip()}%")
+            )
+        )
+
+    # Filter pipeline status
+    if pipeline_status and pipeline_status.strip():
+        query = query.filter(
+            ProjectProspek.pipeline_status
+            == pipeline_status.strip()
+        )
+
+    # Filter tanggal dibuat
+    if tanggal_mulai:
+        mulai = datetime.combine(tanggal_mulai, time.min)
+        query = query.filter(
+            ProjectProspek.created_at >= mulai
+        )
+
+    if tanggal_selesai:
+        sampai = datetime.combine(
+            tanggal_selesai + timedelta(days=1),
+            time.min,
+        )
+        query = query.filter(
+            ProjectProspek.created_at < sampai
+        )
+
+    projects = query.order_by(
+        ProjectProspek.id.desc()
+    ).all()
+
+    # Ambil nama customer berdasarkan customer_id
+    customer_ids = {
+        project.customer_id for project in projects
+    }
+
+    customers = {}
+    if customer_ids:
+        data_customers = db.query(Customer).filter(
+            Customer.id.in_(customer_ids)
+        ).all()
+
+        customers = {
+            customer.id: customer
+            for customer in data_customers
+        }
+
+    # Buat workbook
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Data Project"
+
+    headers = [
+        "Nama Project",
+        "Nama Customer",
+        "Nama PIC",
+        "Kontak PIC",
+        "Kota",
+        "Nama Sales",
+        "Status Project",
+        "Pipeline Status",
+        "Nilai Proyek",
+        "Estimasi Closing",
+        "Deskripsi",
+        "Tanggal Dibuat",
+        "Terakhir Diperbarui",
+    ]
+
+    worksheet.append(headers)
+
+    # Styling header
+    for cell in worksheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(
+            fill_type="solid",
+            fgColor="1F4E78",
+        )
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+        )
+
+    # Isi data project
+    for project in projects:
+        customer = customers.get(project.customer_id)
+
+        worksheet.append([
+            project.nama_project,
+            customer.nama_instansi if customer else None,
+            customer.nama_pic if customer else None,
+            customer.kontak_pic if customer else None,
+            customer.kota if customer else None,
+            project.sales_rel.nama if project.sales_rel else None,
+            project.status_rel.nama if project.status_rel else None,
+            project.pipeline_status,
+            (
+                float(project.nilai_proyek)
+                if project.nilai_proyek is not None
+                else None
+            ),
+            project.estimasi_closing,
+            project.deskripsi,
+            (
+                project.created_at.replace(tzinfo=None)
+                if project.created_at else None
+            ),
+            (
+                project.updated_at.replace(tzinfo=None)
+                if project.updated_at else None
+            ),
+        ])
+
+    # Format kolom nilai proyek dan tanggal
+    for row in worksheet.iter_rows(min_row=2):
+        row[9].number_format = '#,##0.00'  # Nilai Proyek
+        row[10].number_format = "dd-mm-yyyy"  # Estimasi Closing
+        row[12].number_format = "dd-mm-yyyy hh:mm:ss"  # Tanggal Dibuat
+
+    if len(row) > 13:
+        row[13].number_format = "dd-mm-yyyy hh:mm:ss"  # Terakhir Diperbarui
+
+    # Atur lebar kolom
+    for column_cells in worksheet.columns:
+        max_length = max(
+            len(str(cell.value or ""))
+            for cell in column_cells
+        )
+        column_letter = get_column_letter(
+            column_cells[0].column
+        )
+        worksheet.column_dimensions[
+            column_letter
+        ].width = min(max_length + 3, 40)
+
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+
+    # Simpan Excel ke memory
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+
+    filename = (
+        f"data_project_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    )
+
+    return StreamingResponse(
+        output,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"'
+            )
+        },
+    )
