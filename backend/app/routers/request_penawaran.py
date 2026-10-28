@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from pydantic import BaseModel, Field
+import os
+from uuid import uuid4
+from pathlib import Path
+from pydantic import BaseModel, Field, HttpUrl
 from app.db.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.roles import REQUEST_EDIT_ROLES, REQUEST_VIEW_ROLES
@@ -34,6 +37,15 @@ router = APIRouter(
     prefix="/request-penawaran",
     tags=["Request Penawaran"],
 )
+UPLOAD_DIR = Path("uploads/request_penawaran")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+MAX_IMAGE_SIZE = 5 * 1024 * 1024
+ALLOWED_IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
 
 def refresh_request_completion(db, request):
     items = (
@@ -920,4 +932,137 @@ def get_riwayat_revisi_penawaran(
             }
             for revisi in revisi_list
         ],
+    }
+
+@router.post("/{request_id}/items/{item_id}/gambar")
+def upload_gambar_item(
+    request_id: int,
+    item_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    request = get_request_access(
+        db, request_id, user, write=True
+    )
+
+    item = (
+        db.query(RequestPenawaranItem)
+        .filter(
+            RequestPenawaranItem.id == item_id,
+            RequestPenawaranItem.request_penawaran_id == request.id,
+        )
+        .first()
+    )
+
+    if not item:
+        raise HTTPException(404, "Item tidak ditemukan")
+
+    extension = ALLOWED_IMAGE_TYPES.get(file.content_type)
+
+    if not extension:
+        raise HTTPException(
+            status_code=400,
+            detail="Format gambar harus JPG, PNG, atau WebP",
+        )
+
+    try:
+        content = file.file.read(MAX_IMAGE_SIZE + 1)
+
+        if not content:
+            raise HTTPException(400, "File gambar kosong")
+
+        if len(content) > MAX_IMAGE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail="Ukuran gambar maksimal 5 MB",
+            )
+
+        filename = f"{uuid4().hex}{extension}"
+        destination = UPLOAD_DIR / filename
+
+        with destination.open("wb") as image_file:
+            image_file.write(content)
+
+        old_path = item.gambar_path
+        item.gambar_path = str(destination).replace("\\", "/")
+
+        try:
+            db.commit()
+            db.refresh(item)
+        except Exception:
+            db.rollback()
+            destination.unlink(missing_ok=True)
+            raise
+
+        # Hapus gambar lama setelah path baru berhasil disimpan.
+        if old_path:
+            old_file = Path(old_path)
+            if old_file.is_file() and UPLOAD_DIR.resolve() in old_file.resolve().parents:
+                old_file.unlink(missing_ok=True)
+
+        return {
+            "message": "Gambar produk berhasil diunggah",
+            "item_id": item.id,
+            "gambar_path": item.gambar_path,
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Gagal mengunggah gambar produk",
+        )
+    finally:
+        file.file.close()
+
+class MarketplaceLinkUpdate(BaseModel):
+    link_marketplace: HttpUrl | None = None
+
+
+@router.patch("/{request_id}/items/{item_id}/marketplace")
+def update_link_marketplace(
+    request_id: int,
+    item_id: int,
+    data: MarketplaceLinkUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    request = get_request_access(
+        db, request_id, user, write=True
+    )
+
+    item = (
+        db.query(RequestPenawaranItem)
+        .filter(
+            RequestPenawaranItem.id == item_id,
+            RequestPenawaranItem.request_penawaran_id == request.id,
+        )
+        .first()
+    )
+
+    if not item:
+        raise HTTPException(404, "Item tidak ditemukan")
+
+    item.link_marketplace = (
+        str(data.link_marketplace)
+        if data.link_marketplace is not None
+        else None
+    )
+
+    try:
+        db.commit()
+        db.refresh(item)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Gagal menyimpan link marketplace",
+        )
+
+    return {
+        "message": "Link marketplace berhasil diperbarui",
+        "item_id": item.id,
+        "link_marketplace": item.link_marketplace,
     }

@@ -13,6 +13,8 @@ class RequestPenawaranCreate(BaseModel):
     pajak_harga_modal: Optional[str] = None
     nama_pic: Optional[str] = None
     nomor_pic: Optional[str] = None
+    gambar_path: str | None = None
+    link_marketplace: str | None = None
 
 class RequestPenawaranUpdate(BaseModel):
     diminta_oleh: Optional[str] = None
@@ -24,6 +26,8 @@ class RequestPenawaranUpdate(BaseModel):
     total_pagu: Optional[Decimal] = None
     nama_pic: Optional[str] = None
     nomor_pic: Optional[str] = None
+    gambar_path: str | None = None
+    link_marketplace: str | None = None
 
 class RequestPenawaranResponse(BaseModel):
     id: int
@@ -38,6 +42,8 @@ class RequestPenawaranResponse(BaseModel):
     total_pagu: Optional[Decimal] = None
     total_harga_modal: Optional[Decimal] = None
     total_harga_jual: Optional[Decimal] = None
+    gambar_path: str | None = None
+    link_marketplace: str | None = None
     created_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     nama_pic: Optional[str] = None
