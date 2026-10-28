@@ -66,13 +66,12 @@ def export_lkh_excel(
     status_lkh: str | None = None,
     tanggal_mulai: date | None = None,
     tanggal_selesai: date | None = None,
-    nama_pic: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     query = get_lkh_query(db, current_user)
 
-    # Validasi filter
+    # Validasi status
     if status_lkh is not None:
         status_lkh = status_lkh.upper()
         if status_lkh not in ("DONE", "NOT_YET"):
@@ -81,6 +80,7 @@ def export_lkh_excel(
                 detail="Status harus DONE atau NOT_YET",
             )
 
+    # Validasi tanggal
     if (
         tanggal_mulai is not None
         and tanggal_selesai is not None
@@ -90,8 +90,6 @@ def export_lkh_excel(
             status_code=400,
             detail="Tanggal mulai tidak boleh melebihi tanggal selesai",
         )
-
-    # Filter berdasarkan RKH
 
     # Filter berdasarkan status
     if status_lkh is not None:
@@ -108,12 +106,6 @@ def export_lkh_excel(
             LKH.tanggal_kunjungan <= tanggal_selesai
         )
 
-    # Filter berdasarkan nama PIC
-    if nama_pic and nama_pic.strip():
-        query = query.filter(
-            LKH.nama_pic.ilike(f"%{nama_pic.strip()}%")
-        )
-
     data_lkh = query.order_by(LKH.id.desc()).all()
 
     # Buat workbook Excel
@@ -127,8 +119,6 @@ def export_lkh_excel(
         "Hasil Kunjungan",
         "Status LKH",
         "Tindak Lanjut",
-        "Nama PIC",
-        "Nomor PIC",
         "Latitude",
         "Longitude",
         "Dibuat Pada",
@@ -157,8 +147,6 @@ def export_lkh_excel(
             item.hasil_kunjungan,
             item.status_lkh,
             item.tindak_lanjut,
-            item.nama_pic,
-            item.nomor_pic,
             float(item.latitude)
             if item.latitude is not None else None,
             float(item.longitude)
@@ -169,6 +157,19 @@ def export_lkh_excel(
             if item.updated_at else None,
         ])
 
+    # Format tanggal
+    for row in worksheet.iter_rows(min_row=2):
+        row[0].number_format = "dd-mm-yyyy"
+        row[1].number_format = "dd-mm-yyyy"
+        row[7].number_format = "dd-mm-yyyy hh:mm:ss"
+        row[8].number_format = "dd-mm-yyyy hh:mm:ss"
+
+        for cell in row:
+            cell.alignment = Alignment(
+                vertical="top",
+                wrap_text=True,
+            )
+
     # Atur lebar kolom
     for column_cells in worksheet.columns:
         column_letter = get_column_letter(
@@ -176,10 +177,8 @@ def export_lkh_excel(
         )
 
         max_length = max(
-            (
-                len(str(cell.value))
-                if cell.value is not None else 0
-            )
+            len(str(cell.value))
+            if cell.value is not None else 0
             for cell in column_cells
         )
 
@@ -190,13 +189,6 @@ def export_lkh_excel(
 
     worksheet.freeze_panes = "A2"
     worksheet.auto_filter.ref = worksheet.dimensions
-
-    for row in worksheet.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(
-                vertical="top",
-                wrap_text=True,
-            )
 
     # Simpan Excel ke memory
     output = BytesIO()
@@ -213,6 +205,7 @@ def export_lkh_excel(
             "Content-Disposition": 'attachment; filename="data_lkh.xlsx"'
         },
     )
+
 
 @router.get("/{lkh_id}", response_model=LKHResponse)
 def get_lkh_detail(
