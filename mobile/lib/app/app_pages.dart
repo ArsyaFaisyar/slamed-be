@@ -76,7 +76,10 @@ abstract final class AppPages {
       name: AppRoutes.rkhDetail,
       page: () => const RkhDetailPage(),
       middlewares: [AuthMiddleware()],
-      binding: BindingsBuilder(() => Get.lazyPut(() => RkhDetailController(Get.find<RkhRepository>()))),
+      // Konstruktor RkhDetailController di projectmu: (repository, auth).
+      binding: BindingsBuilder(
+        () => Get.lazyPut(() => RkhDetailController(Get.find<RkhRepository>(), Get.find<AuthController>())),
+      ),
     ),
     GetPage(
       name: AppRoutes.lkhForm,
@@ -86,11 +89,22 @@ abstract final class AppPages {
         () => Get.lazyPut(() => LkhFormController(Get.find<LkhRepository>(), Get.find<ProjectRepository>())),
       ),
     ),
+    
     GetPage(
       name: AppRoutes.lkhDetail,
       page: () => const LkhDetailPage(),
       middlewares: [AuthMiddleware()],
-      binding: BindingsBuilder(() => Get.lazyPut(() => LkhDetailController(Get.find<LkhRepository>(), Get.find<AuthController>(), Get.find<ProjectRepository>()))),    ),
+      binding: BindingsBuilder(
+        () => Get.lazyPut(
+          () => LkhDetailController(
+            Get.find<LkhRepository>(),
+            Get.find<AuthController>(),
+            Get.find<ProjectRepository>(),
+          ),
+        ),
+      ),
+    ),
+
     GetPage(
       name: AppRoutes.customerForm,
       page: () => const CustomerFormPage(),

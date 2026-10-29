@@ -3,13 +3,16 @@ import 'package:get/get.dart';
 import 'package:slamed_app/core/constants/app_constant.dart';
 import 'package:slamed_app/core/network/api_exception.dart';
 import 'package:slamed_app/core/utils/currency_format.dart';
+import 'package:slamed_app/core/utils/date_picker.dart';
+import 'package:slamed_app/features/auth/presentation/controllers/auth_controller.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh_update.dart';
 import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
+import 'package:slamed_app/features/rkh/domain/rkh_edit_rules.dart';
 import 'package:slamed_app/shared/helpers/confirm.dart';
 import 'package:slamed_app/shared/helpers/snackbar.dart';
-import 'package:slamed_app/core/utils/date_picker.dart';
 
+/// Argumen navigasi ke detail RKH.
 class RkhDetailArgs {
   const RkhDetailArgs(this.rkh, this.customerName, this.hasLkh);
   final Rkh rkh;
@@ -18,8 +21,9 @@ class RkhDetailArgs {
 }
 
 class RkhDetailController extends GetxController {
-  RkhDetailController(this._repo);
+  RkhDetailController(this._repo, this._auth);
   final RkhRepository _repo;
+  final AuthController _auth;
 
   late final Rx<Rkh> rkh;
   late final String customerName;
@@ -35,8 +39,11 @@ class RkhDetailController extends GetxController {
   final busy = false.obs;
   final error = RxnString();
 
-  /// RKH yang sudah punya LKH dikunci: rencana tidak berubah setelah dilaporkan.
-  bool get canModify => !hasLkh;
+  /// Alasan RKH terkunci (null bila boleh diubah): milik sales lain, sudah punya LKH, atau sudah CLOSED.
+  String? get lockReason =>
+      rkhLockReason(rkh: rkh.value, hasLkh: hasLkh, role: _auth.role, userId: _auth.user.value?.id);
+
+  bool get canModify => lockReason == null;
 
   @override
   void onInit() {
@@ -72,7 +79,7 @@ class RkhDetailController extends GetxController {
     editing.value = false;
   }
 
-      Future<void> pickDate(BuildContext context) async {
+  Future<void> pickDate(BuildContext context) async {
     final today = DateUtils.dateOnly(DateTime.now());
     final d = await pickDateInRange(
       context,
@@ -119,14 +126,19 @@ class RkhDetailController extends GetxController {
     );
     if (!ok) return;
     busy.value = true;
+    var berhasil = false;
     try {
       await _repo.delete(rkh.value.id);
-      showSnack('RKH dihapus.');
-      Get.back();
+      berhasil = true;
     } catch (e) {
       showSnack(errorMessage(e));
     } finally {
       busy.value = false;
+    }
+    if (berhasil) {
+      // Tutup halaman dulu. Snackbar yang masih tampil membuat Get.back() hanya menutup snackbar.
+      Get.back();
+      showSnack('RKH dihapus.');
     }
   }
 }
