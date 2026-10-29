@@ -8,7 +8,6 @@ import Message from 'primevue/message'
 
 import {
   MODE_PAGU_OPTIONS,
-  PAJAK_OPTIONS,
   createRequestPenawaran,
   forgetRequestId,
   getRequestPenawaran,
@@ -26,7 +25,7 @@ import { formatDate } from '../utils/date'
 
 const LIST_PATH = '/aktivitas/lkh'
 
-type Field = 'diminta_oleh' | 'media_pengadaan_id' | 'branch_id' | 'mode_pagu' | 'pajak_harga_modal'
+type Field = 'diminta_oleh' | 'media_pengadaan_id' | 'branch_id' | 'mode_pagu'
 
 const route = useRoute()
 const router = useRouter()
@@ -47,7 +46,6 @@ const form = reactive({
   media_pengadaan_id: null as number | null,
   branch_id: null as number | null,
   mode_pagu: 'DETAIL' as string | null,
-  pajak_harga_modal: null as string | null,
 })
 
 const submitted = ref(false)
@@ -65,7 +63,6 @@ const clientErrors = computed<Record<Field, string>>(() => ({
   media_pengadaan_id: form.media_pengadaan_id === null ? 'Media pengadaan wajib dipilih' : '',
   branch_id: form.branch_id === null ? 'Branch/PT wajib dipilih' : '',
   mode_pagu: form.mode_pagu ? '' : 'Mode pagu wajib dipilih',
-  pajak_harga_modal: form.pajak_harga_modal ? '' : 'Pajak harga modal wajib dipilih',
 }))
 
 function fieldError(field: Field) {
@@ -139,7 +136,6 @@ async function onSubmit() {
       media_pengadaan_id: form.media_pengadaan_id as number,
       branch_id: form.branch_id as number,
       mode_pagu: form.mode_pagu as string,
-      pajak_harga_modal: form.pajak_harga_modal as string,
     })
 
     rememberRequestId(lkhId.value, created.id)
@@ -278,25 +274,6 @@ function goBack() {
           />
           <Message v-if="fieldError('mode_pagu')" severity="error" size="small" variant="simple">
             {{ fieldError('mode_pagu') }}
-          </Message>
-        </div>
-
-        <div class="flex flex-col gap-1.5">
-          <label for="rp-pajak" class="text-sm font-medium">
-            Pajak harga modal <span class="text-red-500">*</span>
-          </label>
-          <Select
-            v-model="form.pajak_harga_modal"
-            input-id="rp-pajak"
-            :options="PAJAK_OPTIONS"
-            option-label="label"
-            option-value="value"
-            placeholder="Pilih pajak"
-            fluid
-            :invalid="!!fieldError('pajak_harga_modal')"
-          />
-          <Message v-if="fieldError('pajak_harga_modal')" severity="error" size="small" variant="simple">
-            {{ fieldError('pajak_harga_modal') }}
           </Message>
         </div>
 

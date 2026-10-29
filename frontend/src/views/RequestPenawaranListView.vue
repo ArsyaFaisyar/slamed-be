@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import InputText from "primevue/inputtext";
 import Select from "primevue/select";
 import Button from "primevue/button";
 import Message from "primevue/message";
+import Paginator, { type PageState } from "primevue/paginator";
 
 import { getLkh, isLkhDone, type Lkh } from "../api/lkh.ts";
 import { getRkh, type Rkh } from "../api/rkh.ts";
@@ -26,6 +27,8 @@ const REQUEST_STATUS = [
   "req penawaran",
   "penawaran",
 ];
+
+const ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
 
 interface RequestRef {
   id: number;
@@ -56,6 +59,9 @@ const search = ref("");
 const stateFilter = ref<"created" | "pending" | null>(null);
 const loading = ref(false);
 const errorMessage = ref("");
+
+const first = ref(0);
+const perPage = ref(ROWS_PER_PAGE_OPTIONS[0]);
 
 const stateOptions = [
   { label: "Belum dibuat", value: "pending" },
@@ -197,6 +203,38 @@ const filteredRows = computed(() => {
     );
   });
 });
+
+const pagedRows = computed(() =>
+  filteredRows.value.slice(first.value, first.value + perPage.value),
+);
+
+const rangeStart = computed(() =>
+  filteredRows.value.length === 0 ? 0 : first.value + 1,
+);
+
+const rangeEnd = computed(() =>
+  Math.min(first.value + perPage.value, filteredRows.value.length),
+);
+
+function onPage(event: PageState) {
+  first.value = event.first;
+  perPage.value = event.rows;
+}
+
+// Pencarian atau filter berubah: kembali ke halaman pertama.
+watch([search, stateFilter], () => {
+  first.value = 0;
+});
+
+// Jumlah data berkurang (misalnya setelah reload): jangan tertinggal di halaman kosong.
+watch(
+  () => filteredRows.value.length,
+  (length) => {
+    if (first.value > 0 && first.value >= length) {
+      first.value = Math.max(0, Math.floor((length - 1) / perPage.value) * perPage.value);
+    }
+  },
+);
 
 function openRow(row: Row) {
   if (row.request) {
@@ -373,9 +411,11 @@ onMounted(fetchData);
         :class="loading && 'pointer-events-none opacity-60'"
         :aria-busy="loading"
       >
-        <table class="w-full min-w-[1060px] text-left text-sm">
+        <table class="w-full min-w-[1120px] text-left text-sm">
           <thead class="bg-sidebar text-fg-muted">
             <tr>
+              <th class="w-14 px-5 py-3 font-medium">No</th>
+
               <th class="px-5 py-3 font-medium">
                 Tanggal kunjungan
               </th>
@@ -401,10 +441,14 @@ onMounted(fetchData);
 
           <tbody class="divide-y divide-line">
             <tr
-              v-for="row in filteredRows"
+              v-for="(row, index) in pagedRows"
               :key="row.lkh.id"
               class="transition-colors hover:bg-sidebar/60"
             >
+              <td class="px-5 py-4 tabular-nums text-fg-muted">
+                {{ first + index + 1 }}
+              </td>
+
               <td class="whitespace-nowrap px-5 py-4">
                 {{ formatDate(row.lkh.tanggal_kunjungan) }}
               </td>
@@ -507,8 +551,29 @@ onMounted(fetchData);
         </table>
       </div>
 
-      <footer class="border-t border-line px-5 py-3 text-xs text-fg-muted">
-        Total {{ rows.length }} LKH
+      <Paginator
+        v-if="filteredRows.length > 0"
+        :first="first"
+        :rows="perPage"
+        :total-records="filteredRows.length"
+        :rows-per-page-options="ROWS_PER_PAGE_OPTIONS"
+        class="border-t border-line"
+        @page="onPage"
+      />
+
+      <footer
+        class="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3 text-xs text-fg-muted"
+      >
+        <span>
+          <template v-if="filteredRows.length > 0">
+            Menampilkan {{ rangeStart }}–{{ rangeEnd }} dari {{ filteredRows.length }} LKH
+          </template>
+          <template v-else>Tidak ada data</template>
+        </span>
+
+        <span v-if="filteredRows.length !== rows.length">
+          Total {{ rows.length }} LKH
+        </span>
       </footer>
     </section>
   </div>

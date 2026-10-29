@@ -9,9 +9,10 @@ import Select from "primevue/select";
 import Button from "primevue/button";
 import Message from "primevue/message";
 import { updateRkh, type Rkh } from "../../api/rkh";
-import { tipeAktivitasOptions } from "../../constant/rkh";
+import { tipeAktivitasOptions, tipeAktivitasSetelahRequestOptions } from "../../constant/rkh";
 import { getErrorMessage, getFieldErrors } from "../../utils/error";
 import { parseDateString, toDateString } from "../../utils/date";
+import { getProjectIdsWithRequest } from "../../utils/projectRequest";
 import type { Option, ProjectOption } from "./Types";
 
 const visible = defineModel<boolean>("visible", { default: false });
@@ -52,6 +53,21 @@ const saving = ref(false);
 const formError = ref("");
 const serverErrors = ref<Record<string, string>>({});
 
+// Project yang sudah punya request penawaran dari RKH lain: tipe aktivitas dibatasi.
+const projectIdsWithRequest = ref<Set<number>>(new Set());
+
+const isRestricted = computed(() => form.project_id !== null && projectIdsWithRequest.value.has(form.project_id));
+
+const tipeOptions = computed(() => {
+  if (!isRestricted.value) return tipeAktivitasOptions;
+
+  // Data lama tetap valid: tipe asli RKH ini tidak dibuang selama project-nya tidak diganti.
+  const original = props.rkh && form.project_id === props.rkh.project_id ? props.rkh.tipe_aktivitas : null;
+  const extra = original && !tipeAktivitasSetelahRequestOptions.some((option) => option.value === original) ? [{ label: original, value: original }] : [];
+
+  return [...tipeAktivitasSetelahRequestOptions, ...extra];
+});
+
 const filteredProjects = computed(() =>
   props.projectOptions.filter((project) => project.customer_id === form.customer_id),
 );
@@ -65,6 +81,13 @@ watch(
   },
 );
 
+// Tipe yang sudah dipilih tapi tidak lagi diizinkan (project berganti): kosongkan.
+watch(tipeOptions, (options) => {
+  if (form.tipe_aktivitas && !options.some((option) => option.value === form.tipe_aktivitas)) {
+    form.tipe_aktivitas = null;
+  }
+});
+
 const clientErrors = computed<Record<Field, string>>(() => ({
   customer_id: form.customer_id ? "" : "Customer wajib dipilih",
   project_id: form.project_id ? "" : "Project wajib dipilih",
@@ -72,7 +95,11 @@ const clientErrors = computed<Record<Field, string>>(() => ({
   tanggal_pelaksanaan: "",
   judul_kegiatan: form.judul_kegiatan.trim() ? "" : "Judul kegiatan wajib diisi",
   rencana_kegiatan: form.rencana_kegiatan.trim() ? "" : "Rencana kegiatan wajib diisi",
-  tipe_aktivitas: form.tipe_aktivitas ? "" : "Tipe aktivitas wajib dipilih",
+  tipe_aktivitas: !form.tipe_aktivitas
+    ? "Tipe aktivitas wajib dipilih"
+    : !tipeOptions.value.some((option) => option.value === form.tipe_aktivitas)
+      ? "Tipe aktivitas tidak diizinkan untuk project ini"
+      : "",
   estimasi_biaya_harian:
     form.estimasi_biaya_harian === null
       ? "Estimasi biaya wajib diisi"
@@ -99,10 +126,16 @@ function resetForm() {
   serverErrors.value = {};
 }
 
+async function loadRestriction() {
+  projectIdsWithRequest.value = await getProjectIdsWithRequest(props.rkh?.id);
+}
+
 watch(
   () => [visible.value, props.rkh] as const,
   ([isVisible]) => {
-    if (isVisible) resetForm();
+    if (!isVisible) return;
+    resetForm();
+    loadRestriction();
   },
   { immediate: true },
 );
@@ -206,7 +239,10 @@ async function onSubmit() {
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5">
           <label for="edit-rkh-tipe" class="text-sm font-medium">Tipe aktivitas</label>
-          <Select v-model="form.tipe_aktivitas" input-id="edit-rkh-tipe" :options="tipeAktivitasOptions" option-label="label" option-value="value" placeholder="Pilih tipe" fluid :invalid="!!fieldError('tipe_aktivitas')" />
+          <Select v-model="form.tipe_aktivitas" input-id="edit-rkh-tipe" :options="tipeOptions" option-label="label" option-value="value" placeholder="Pilih tipe" fluid :invalid="!!fieldError('tipe_aktivitas')" />
+          <p v-if="isRestricted" class="text-xs text-fg-muted">
+            Project ini sudah punya request penawaran, jadi pilihan dibatasi ke tahap lanjutan.
+          </p>
           <Message v-if="fieldError('tipe_aktivitas')" severity="error" size="small" variant="simple">
             {{ fieldError("tipe_aktivitas") }}
           </Message>

@@ -58,6 +58,19 @@ def get_project_query(db: Session, current_user: User):
     return query
 
 
+def parse_id_list(value: str | None) -> list[int]:
+    if not value or not value.strip():
+        return []
+
+    try:
+        return [int(part) for part in value.split(",") if part.strip()]
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Filter harus berupa daftar ID yang dipisah koma",
+        )
+
+
 @router.get("/", response_model=list[ProjectProspekResponse])
 def get_projects(
     customer_id: int | None = None,
@@ -522,55 +535,49 @@ def export_project_excel(
     sales: str | None = None,
     customer: str | None = None,
     status: str | None = None,
-    search: str | None = None,
+    tanggal_mulai: date | None = None,
+    tanggal_selesai: date | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = get_project_query(db, current_user).options(
-        joinedload(ProjectProspek.sales_rel),
-        joinedload(ProjectProspek.status_rel),
-    )
+    query = get_project_query(db, current_user)
 
-    # Filter berdasarkan nama sales
-    if sales and sales.strip():
+    sales_ids = parse_id_list(sales)
+    if sales_ids:
+        query = query.filter(ProjectProspek.sales_id.in_(sales_ids))
+
+    customer_ids_filter = parse_id_list(customer)
+    if customer_ids_filter:
         query = query.filter(
-            ProjectProspek.sales_rel.has(
-                User.nama.ilike(f"%{sales.strip()}%")
-            )
+            ProjectProspek.customer_id.in_(customer_ids_filter)
         )
 
-    # Filter berdasarkan nama customer
-    if customer and customer.strip():
-        query = query.join(
-            Customer,
-            ProjectProspek.customer_id == Customer.id,
-        ).filter(
-            Customer.nama_instansi.ilike(
-                f"%{customer.strip()}%"
-            )
+    status_ids = parse_id_list(status)
+    if status_ids:
+        query = query.filter(ProjectProspek.status_id.in_(status_ids))
+
+    if tanggal_mulai and tanggal_selesai and tanggal_mulai > tanggal_selesai:
+        raise HTTPException(
+            status_code=400,
+            detail="Tanggal mulai tidak boleh lebih besar dari tanggal selesai",
         )
 
-    # Filter berdasarkan status project
-    if status and status.strip():
+    if tanggal_mulai:
         query = query.filter(
-            ProjectProspek.status_rel.has(
-                ProjectStatus.nama.ilike(f"%{status.strip()}%")
-            )
+            ProjectProspek.created_at
+            >= datetime.combine(tanggal_mulai, time.min)
         )
 
-    # Pencarian berdasarkan nama project
-    if search and search.strip():
+    if tanggal_selesai:
         query = query.filter(
-            ProjectProspek.nama_project.ilike(
-                f"%{search.strip()}%"
-            )
+            ProjectProspek.created_at
+            < datetime.combine(tanggal_selesai + timedelta(days=1), time.min)
         )
 
     projects = query.order_by(
         ProjectProspek.id.desc()
     ).all()
 
-    # Ambil nama customer berdasarkan customer_id
     customer_ids = {
         project.customer_id for project in projects
     }
@@ -582,32 +589,30 @@ def export_project_excel(
         ).all()
 
         customers = {
-            customer.id: customer
-            for customer in data_customers
+            customer_row.id: customer_row
+            for customer_row in data_customers
         }
 
-    # Buat workbook
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "Data Project"
 
     headers = [
-    "Nama Project",
-    "Nama Customer",
-    "Kota",
-    "Nama Sales",
-    "Status Project",
-    "Pipeline Status",
-    "Nilai Proyek",
-    "Estimasi Closing",
-    "Deskripsi",
-    "Tanggal Dibuat",
-    "Terakhir Diperbarui",
-]
+        "Nama Project",
+        "Nama Customer",
+        "Kota",
+        "Nama Sales",
+        "Status Project",
+        "Pipeline Status",
+        "Nilai Proyek",
+        "Estimasi Closing",
+        "Deskripsi",
+        "Tanggal Dibuat",
+        "Terakhir Diperbarui",
+    ]
 
     worksheet.append(headers)
 
-    # Styling header
     for cell in worksheet[1]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill(
@@ -619,14 +624,13 @@ def export_project_excel(
             vertical="center",
         )
 
-    # Isi data project
     for project in projects:
-        customer = customers.get(project.customer_id)
+        customer_row = customers.get(project.customer_id)
 
         worksheet.append([
             project.nama_project,
-            customer.nama_instansi if customer else None,
-            customer.kota if customer else None,
+            customer_row.nama_instansi if customer_row else None,
+            customer_row.kota if customer_row else None,
             project.sales_rel.nama if project.sales_rel else None,
             project.status_rel.nama if project.status_rel else None,
             project.pipeline_status,
@@ -647,16 +651,12 @@ def export_project_excel(
             ),
         ])
 
-    # Format kolom nilai proyek dan tanggal
     for row in worksheet.iter_rows(min_row=2):
-        row[6].number_format = '#,##0.00'  # Nilai Proyek
-        row[7].number_format = "dd-mm-yyyy"  # Estimasi Closing
-        row[9].number_format = "dd-mm-yyyy hh:mm:ss"  # Tanggal Dibuat
-        row[10].number_format = "dd-mm-yyyy hh:mm:ss"  # Terakhir Diperbarui
+        row[6].number_format = "#,##0.00"
+        row[7].number_format = "dd-mm-yyyy"
+        row[9].number_format = "dd-mm-yyyy hh:mm:ss"
+        row[10].number_format = "dd-mm-yyyy hh:mm:ss"
 
-
-
-    # Atur lebar kolom
     for column_cells in worksheet.columns:
         max_length = max(
             len(str(cell.value or ""))
@@ -672,7 +672,6 @@ def export_project_excel(
     worksheet.freeze_panes = "A2"
     worksheet.auto_filter.ref = worksheet.dimensions
 
-    # Simpan Excel ke memory
     output = BytesIO()
     workbook.save(output)
     output.seek(0)

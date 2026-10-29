@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import InputNumber from 'primevue/inputnumber'
 import Message from 'primevue/message'
 
-import type { RequestItem } from '../../api/requestPenawaran.ts'
+import { resolveGambarUrl, type RequestItem } from '../../api/requestPenawaran.ts'
 import { draftTotal, formatQty, formatRupiah, lineTotal, toNumber, type Draft } from '../../utils/price.ts'
 
 const props = defineProps<{
@@ -35,10 +35,11 @@ function setPrice(id: number, value: number | null) {
 <template>
   <div class="flex flex-col gap-4">
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[760px] text-left text-sm">
+      <table class="w-full min-w-[840px] text-left text-sm">
         <thead class="border-b border-line text-xs text-fg-muted">
           <tr>
             <th class="w-12 px-3 py-3 font-medium">No</th>
+            <th class="w-20 px-3 py-3 font-medium">Gambar</th>
             <th class="px-3 py-3 font-medium">Nama barang</th>
             <th class="px-3 py-3 text-right font-medium">Jml</th>
             <th class="px-3 py-3 font-medium">Satuan</th>
@@ -50,6 +51,30 @@ function setPrice(id: number, value: number | null) {
         <tbody class="divide-y divide-line">
           <tr v-for="(item, index) in items" :key="item.id" class="align-top">
             <td class="px-3 py-3 tabular-nums text-fg-muted">{{ index + 1 }}</td>
+            <td class="px-3 py-2">
+              <a
+                v-if="item.gambar_path"
+                :href="resolveGambarUrl(item.gambar_path)"
+                target="_blank"
+                rel="noopener"
+                class="block h-14 w-14 overflow-hidden rounded-lg border border-line bg-sidebar/50"
+                :title="`Lihat gambar ${item.nama_barang}`"
+              >
+                <img
+                  :src="resolveGambarUrl(item.gambar_path)"
+                  :alt="item.nama_barang"
+                  loading="lazy"
+                  class="h-full w-full object-contain"
+                />
+              </a>
+              <div
+                v-else
+                class="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-line text-fg-muted"
+                title="Belum ada gambar"
+              >
+                <i class="pi pi-image" />
+              </div>
+            </td>
             <td class="min-w-[180px] px-3 py-3 font-medium">{{ item.nama_barang }}</td>
             <td class="px-3 py-3 text-right tabular-nums">{{ formatQty(item.jumlah) }}</td>
             <td class="px-3 py-3">{{ item.satuan }}</td>

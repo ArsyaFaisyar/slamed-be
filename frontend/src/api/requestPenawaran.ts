@@ -10,7 +10,8 @@ export interface RequestPenawaran {
   media_pengadaan_id: number;
   branch_id: number;
   mode_pagu: string;
-  pajak_harga_modal: string;
+  /** Legacy: pajak sekarang diatur per barang lewat jenis_pajak. */
+  pajak_harga_modal: string | null;
   status_request: string;
   total_pagu: Numeric | null;
   total_harga_modal: Numeric | null;
@@ -26,7 +27,6 @@ export interface RequestPenawaranInput {
   media_pengadaan_id: number;
   branch_id: number;
   mode_pagu: string;
-  pajak_harga_modal: string;
 }
 
 export interface RequestItem {
@@ -43,6 +43,11 @@ export interface RequestItem {
   harga_pagu: Numeric | null;
   harga_modal: Numeric | null;
   harga_jual: Numeric | null;
+  jenis_pajak: string | null;
+  gambar_path: string | null;
+  link_marketplace: string | null;
+  /** Barang tambahan dari PPIC/admin: tidak masuk pagu dan RAB. */
+  is_tambahan: boolean;
 }
 
 export interface RequestPenawaranUpdate {
@@ -50,7 +55,6 @@ export interface RequestPenawaranUpdate {
   media_pengadaan_id?: number;
   branch_id?: number;
   mode_pagu?: string;
-  pajak_harga_modal?: string;
   total_pagu?: number | null;
 }
 
@@ -78,12 +82,20 @@ export interface RequestItemInput {
   tkdn_persen?: number;
   spesifikasi?: string;
   catatan_sales?: string;
+  is_tambahan?: boolean;
 }
 
 export interface RequestItemPriceUpdate {
   harga_pagu?: number | null;
   harga_modal?: number | null;
   harga_jual?: number | null;
+  jenis_pajak?: string | null;
+}
+
+export interface UploadGambarResponse {
+  message: string;
+  item_id: number;
+  gambar_path: string;
 }
 
 export const MODE_PAGU_OPTIONS = [
@@ -91,6 +103,13 @@ export const MODE_PAGU_OPTIONS = [
   { value: "TOTAL", label: "Total" },
 ];
 
+// Nilai jenis_pajak harus sama dengan enum di BE (cek schema di /docs).
+export const JENIS_PAJAK_OPTIONS = [
+  { value: "PAJAK", label: "Pajak" },
+  { value: "NON_PAJAK", label: "Non pajak" },
+];
+
+/** Legacy: pajak per request tidak dipakai lagi. Hapus kalau tidak ada yang mengimpor. */
 export const PAJAK_OPTIONS = [
   { value: "TERMASUK", label: "Termasuk pajak" },
   { value: "TIDAK_TERMASUK", label: "Tidak termasuk pajak" },
@@ -136,7 +155,7 @@ export async function createRequestItem(requestId: number, payload: RequestItemI
   return data;
 }
 
-export async function updateRequestItem(requestId: number, itemId: number, payload: RequestItemPriceUpdate): Promise<RequestItem> {
+export async function updateRequestItem(requestId: number, itemId: number, payload: RequestItemUpdate & RequestItemPriceUpdate): Promise<RequestItem> {
   const { data } = await http.patch<RequestItem>(`/request-penawaran/${requestId}/items/${itemId}`, payload);
 
   return data;
@@ -176,4 +195,37 @@ export function forgetRequestId(lkhId: number) {
 
 export async function requestRevisiPenawaran(requestId: number, alasanRevisi: string): Promise<void> {
   await http.post(`/request-penawaran/${requestId}/revisi`, { alasan_revisi: alasanRevisi });
+}
+
+// gambar_path dari BE berupa path relatif (contoh: uploads/request_penawaran/xxx.png),
+// jadi digabung dengan origin server BE, bukan langsung dengan base URL API.
+export function resolveGambarUrl(path: string | null | undefined): string {
+  if (!path) return "";
+  if (/^(https?:|blob:|data:)/.test(path)) return path;
+
+  let origin = "";
+  try {
+    origin = new URL(import.meta.env.VITE_API_BASE_URL ?? "", window.location.origin).origin;
+  } catch {
+    origin = "";
+  }
+
+  return `${origin}/${path.replace(/^\/+/, "")}`;
+}
+
+export async function uploadGambarItem(requestId: number, itemId: number, file: File): Promise<UploadGambarResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const { data } = await http.post<UploadGambarResponse>(`/request-penawaran/${requestId}/items/${itemId}/gambar`, formData);
+
+  return data;
+}
+
+export async function updateLinkMarketplace(requestId: number, itemId: number, linkMarketplace: string | null): Promise<RequestItem> {
+  const { data } = await http.patch<RequestItem>(`/request-penawaran/${requestId}/items/${itemId}/marketplace`, {
+    link_marketplace: linkMarketplace,
+  });
+
+  return data;
 }

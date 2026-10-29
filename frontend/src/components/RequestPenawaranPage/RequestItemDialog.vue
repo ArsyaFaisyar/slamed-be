@@ -1,21 +1,32 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
+import Dropdown from 'primevue/dropdown'
 import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
 import {
   createRequestItem,
+  resolveGambarUrl,
+  updateLinkMarketplace,
   updateRequestItem,
+  uploadGambarItem,
   type RequestItem,
   type RequestItemInput,
-  type RequestItemPriceUpdate,
+  type RequestItemUpdate,
 } from '../../api/requestPenawaran'
 import { getErrorMessage, getFieldErrors } from '../../utils/error'
 
-const props = defineProps<{ requestId: number; item?: RequestItem | null; canEditCost: boolean }>()
+const props = defineProps<{
+  requestId: number
+  item?: RequestItem | null
+  /** true untuk PPIC: barang dari sales sebagian dikunci, harga diisi di tabel */
+  restricted?: boolean
+  /** true saat menambah barang tambahan (tidak masuk pagu/RAB) */
+  extra?: boolean
+}>()
 const visible = defineModel<boolean>('visible', { default: false })
 const emit = defineEmits<{ saved: [] }>()
 
@@ -28,22 +39,30 @@ type Field =
   | 'catatan_sales'
   | 'jumlah'
   | 'satuan'
-  | 'harga_pagu'
-  | 'harga_modal'
-  | 'harga_jual'
+  | 'link_marketplace'
+  | 'gambar'
+
+const MAX_GAMBAR_MB = 5
+const TEXT_FIELDS = ['merk', 'tkdn', 'spesifikasi', 'catatan_sales'] as const
+const TKDN_OPTIONS = [
+  { label: 'TKDN', value: 'TKDN' },
+  { label: 'NON TKDN', value: 'NON TKDN' },
+]
+
+function isNonTkdn(value: string | null | undefined) {
+  return /^(non|tidak)/i.test((value ?? '').trim())
+}
 
 const form = reactive({
   nama_barang: '',
   merk: '',
-  tkdn: '',
+  tkdn: '' as string | null,
   tkdn_persen: null as number | null,
   spesifikasi: '',
   catatan_sales: '',
   jumlah: 1 as number | null,
   satuan: 'Unit',
-  harga_pagu: null as number | null,
-  harga_modal: null as number | null,
-  harga_jual: null as number | null,
+  link_marketplace: '',
 })
 
 const submitted = ref(false)
@@ -51,14 +70,55 @@ const saving = ref(false)
 const formError = ref('')
 const serverErrors = ref<Record<string, string>>({})
 
-const isPriceMode = computed(() => !!props.item)
+const gambarInput = ref<HTMLInputElement | null>(null)
+const gambarFile = ref<File | null>(null)
+const gambarPreview = ref('')
+const createdItemId = ref<number | null>(null)
+
+const showTkdnPersen = computed(() => form.tkdn === 'TKDN')
+
+watch(
+  () => form.tkdn,
+  (val) => {
+    if (val !== 'TKDN') {
+      form.tkdn_persen = null
+    }
+  },
+)
+
+const isEdit = computed(() => !!props.item)
+// Barang dari sales dikunci untuk PPIC; barang tambahan milik PPIC tidak dikunci
+const lockExtra = computed(() => !!props.restricted && !!props.item && !props.item.is_tambahan)
+const currentGambar = computed(() => gambarPreview.value || resolveGambarUrl(props.item?.gambar_path))
+
+function isValidUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
 
 const clientErrors = computed<Partial<Record<Field, string>>>(() => ({
-  nama_barang: isPriceMode.value || form.nama_barang.trim() ? '' : 'Nama barang wajib diisi',
-  jumlah: isPriceMode.value || (form.jumlah !== null && form.jumlah > 0) ? '' : 'Jumlah minimal 1',
-  satuan: isPriceMode.value || form.satuan.trim() ? '' : 'Satuan wajib diisi',
+  nama_barang: form.nama_barang.trim() ? '' : 'Nama barang wajib diisi',
+  jumlah: form.jumlah !== null && form.jumlah > 0 ? '' : 'Jumlah minimal 1',
+  satuan: form.satuan.trim() ? '' : 'Satuan wajib diisi',
   tkdn_persen:
-    form.tkdn_persen !== null && (form.tkdn_persen < 0 || form.tkdn_persen > 100) ? 'Persentase 0 sampai 100' : '',
+    showTkdnPersen.value && form.tkdn_persen !== null && (form.tkdn_persen < 0 || form.tkdn_persen > 100)
+      ? 'Persentase 0 sampai 100'
+      : '',
+  link_marketplace:
+    form.link_marketplace.trim() && !isValidUrl(form.link_marketplace.trim())
+      ? 'Link harus diawali http:// atau https://'
+      : '',
+  gambar: !gambarFile.value
+    ? ''
+    : !gambarFile.value.type.startsWith('image/')
+      ? 'File harus berupa gambar'
+      : gambarFile.value.size > MAX_GAMBAR_MB * 1024 * 1024
+        ? `Ukuran gambar maksimal ${MAX_GAMBAR_MB} MB`
+        : '',
 }))
 
 const hasClientErrors = computed(() => Object.values(clientErrors.value).some(Boolean))
@@ -68,7 +128,7 @@ function limitPersen(event: { value?: number | string | null; originalEvent: Eve
   if (value === null || value <= 100) return
   form.tkdn_persen = 100
   const target = event.originalEvent?.target as HTMLInputElement | null
-  if (target) target.value = '100'
+  if (target) target.value = '100%'
 }
 
 function fieldError(field: Field) {
@@ -81,20 +141,55 @@ function toNumber(value: string | number | null | undefined) {
   return Number.isNaN(number) ? null : number
 }
 
+function clearPreview() {
+  if (gambarPreview.value) URL.revokeObjectURL(gambarPreview.value)
+  gambarPreview.value = ''
+}
+
+function pickGambar() {
+  gambarInput.value?.click()
+}
+
+function onGambarChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  input.value = ''
+  if (!file) return
+
+  clearPreview()
+  gambarFile.value = file
+  gambarPreview.value = URL.createObjectURL(file)
+  delete serverErrors.value.gambar
+}
+
+function removeGambar() {
+  clearPreview()
+  gambarFile.value = null
+}
+
+onBeforeUnmount(clearPreview)
+
 watch(visible, (value) => {
   if (!value) return
 
   form.nama_barang = props.item?.nama_barang ?? ''
   form.merk = props.item?.merk ?? ''
-  form.tkdn = props.item?.tkdn ?? ''
-  form.tkdn_persen = toNumber(props.item?.tkdn_persen)
+  const rawTkdn = props.item?.tkdn?.trim() ?? ''
+  if (rawTkdn) {
+    form.tkdn = isNonTkdn(rawTkdn) ? 'NON TKDN' : 'TKDN'
+  } else if (props.item?.tkdn_persen != null) {
+    form.tkdn = 'TKDN'
+  } else {
+    form.tkdn = ''
+  }
+  form.tkdn_persen = form.tkdn === 'TKDN' ? toNumber(props.item?.tkdn_persen) : null
   form.spesifikasi = props.item?.spesifikasi ?? ''
   form.catatan_sales = props.item?.catatan_sales ?? ''
   form.jumlah = props.item ? toNumber(props.item.jumlah) : 1
   form.satuan = props.item?.satuan ?? 'Unit'
-  form.harga_pagu = toNumber(props.item?.harga_pagu)
-  form.harga_modal = toNumber(props.item?.harga_modal)
-  form.harga_jual = toNumber(props.item?.harga_jual)
+  form.link_marketplace = props.item?.link_marketplace ?? ''
+  removeGambar()
+  createdItemId.value = null
   submitted.value = false
   formError.value = ''
   serverErrors.value = {}
@@ -108,21 +203,35 @@ function buildCreatePayload(): RequestItemInput {
   }
 
   if (form.merk.trim()) payload.merk = form.merk.trim()
-  if (form.tkdn.trim()) payload.tkdn = form.tkdn.trim()
-  if (form.tkdn_persen !== null) payload.tkdn_persen = form.tkdn_persen
+  if (form.tkdn?.trim()) payload.tkdn = form.tkdn.trim()
+  if (form.tkdn === 'TKDN' && form.tkdn_persen !== null) payload.tkdn_persen = form.tkdn_persen
   if (form.spesifikasi.trim()) payload.spesifikasi = form.spesifikasi.trim()
   if (form.catatan_sales.trim()) payload.catatan_sales = form.catatan_sales.trim()
+  if (props.extra) payload.is_tambahan = true
 
   return payload
 }
 
-function buildPricePayload(item: RequestItem): RequestItemPriceUpdate {
-  const payload: RequestItemPriceUpdate = {}
+// Dialog ini hanya mengubah data barang. Harga pagu, modal, dan jual
+// hanya diubah lewat tabel di halaman detail, jadi tidak pernah dikirim dari sini.
+function buildUpdatePayload(item: RequestItem): RequestItemUpdate {
+  const payload: RequestItemUpdate = {}
 
-  if (form.harga_pagu !== toNumber(item.harga_pagu)) payload.harga_pagu = form.harga_pagu
-  if (props.canEditCost) {
-    if (form.harga_modal !== toNumber(item.harga_modal)) payload.harga_modal = form.harga_modal
-    if (form.harga_jual !== toNumber(item.harga_jual)) payload.harga_jual = form.harga_jual
+  const nama = form.nama_barang.trim()
+  if (nama !== item.nama_barang) payload.nama_barang = nama
+
+  const satuan = form.satuan.trim()
+  if (!lockExtra.value && satuan !== item.satuan) payload.satuan = satuan
+
+  if (!lockExtra.value && form.jumlah !== toNumber(item.jumlah)) payload.jumlah = form.jumlah as number
+  const nextPersen = form.tkdn === 'TKDN' ? form.tkdn_persen : null
+  if (nextPersen !== toNumber(item.tkdn_persen)) payload.tkdn_persen = nextPersen
+
+  for (const key of TEXT_FIELDS) {
+    if (lockExtra.value && key === 'catatan_sales') continue
+    const next = (form[key] ?? '').trim() || null
+    const previous = item[key]?.trim() || null
+    if (next !== previous) payload[key] = next
   }
 
   return payload
@@ -137,20 +246,40 @@ async function onSubmit() {
   serverErrors.value = {}
 
   try {
+    let itemId = props.item?.id ?? createdItemId.value
+
     if (props.item) {
-      const payload = buildPricePayload(props.item)
+      const payload = buildUpdatePayload(props.item)
       if (Object.keys(payload).length > 0) await updateRequestItem(props.requestId, props.item.id, payload)
-    } else {
-      await createRequestItem(props.requestId, buildCreatePayload())
+    } else if (itemId === null) {
+      const created = await createRequestItem(props.requestId, buildCreatePayload())
+      itemId = created.id
+      createdItemId.value = created.id
+    }
+
+    if (itemId !== null) {
+      const link = form.link_marketplace.trim()
+      const currentLink = props.item?.link_marketplace ?? ''
+      if (!lockExtra.value && link !== currentLink) {
+        await updateLinkMarketplace(props.requestId, itemId, link || null)
+      }
+      if (gambarFile.value) {
+        await uploadGambarItem(props.requestId, itemId, gambarFile.value)
+      }
     }
 
     visible.value = false
     emit('saved')
   } catch (error) {
+    if (createdItemId.value !== null) emit('saved')
+
     const errors = getFieldErrors(error)
     serverErrors.value = errors
     if (Object.keys(errors).length === 0) {
-      formError.value = getErrorMessage(error, 'Gagal menyimpan barang')
+      formError.value =
+        createdItemId.value !== null
+          ? 'Barang sudah tersimpan, tetapi gambar atau link marketplace gagal disimpan. Coba simpan lagi.'
+          : getErrorMessage(error, 'Gagal menyimpan barang')
     }
   } finally {
     saving.value = false
@@ -162,7 +291,7 @@ async function onSubmit() {
   <Dialog
     v-model:visible="visible"
     modal
-    :header="isPriceMode ? 'Ubah harga barang' : 'Tambah barang'"
+    :header="isEdit ? 'Ubah barang' : extra ? 'Tambah barang tambahan' : 'Tambah barang'"
     class="w-[calc(100vw-2rem)] max-w-2xl"
     :draggable="false"
     :closable="!saving"
@@ -171,73 +300,7 @@ async function onSubmit() {
     <form id="request-item-form" class="flex flex-col gap-4" novalidate @submit.prevent="onSubmit">
       <Message v-if="formError" severity="error" size="small">{{ formError }}</Message>
 
-      <template v-if="isPriceMode">
-        <div class="rounded-lg border border-line bg-sidebar/50 p-3">
-          <p class="text-sm font-medium">{{ item?.nama_barang }}</p>
-          <p class="mt-0.5 text-xs text-fg-muted">{{ item?.jumlah }} {{ item?.satuan }}</p>
-        </div>
-
-        <div class="grid gap-4 sm:grid-cols-3">
-          <div class="flex flex-col gap-1.5">
-            <label for="item-pagu" class="text-sm font-medium">Harga pagu</label>
-            <InputNumber
-              v-model="form.harga_pagu"
-              input-id="item-pagu"
-              mode="currency"
-              currency="IDR"
-              locale="id-ID"
-              :max-fraction-digits="0"
-              fluid
-              :invalid="!!fieldError('harga_pagu')"
-            />
-            <Message v-if="fieldError('harga_pagu')" severity="error" size="small" variant="simple">
-              {{ fieldError('harga_pagu') }}
-            </Message>
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <label for="item-modal" class="text-sm font-medium">Harga modal</label>
-            <InputNumber
-              v-model="form.harga_modal"
-              input-id="item-modal"
-              mode="currency"
-              currency="IDR"
-              locale="id-ID"
-              :max-fraction-digits="0"
-              fluid
-              :disabled="!canEditCost"
-              :invalid="!!fieldError('harga_modal')"
-            />
-            <Message v-if="fieldError('harga_modal')" severity="error" size="small" variant="simple">
-              {{ fieldError('harga_modal') }}
-            </Message>
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <label for="item-jual" class="text-sm font-medium">Harga jual</label>
-            <InputNumber
-              v-model="form.harga_jual"
-              input-id="item-jual"
-              mode="currency"
-              currency="IDR"
-              locale="id-ID"
-              :max-fraction-digits="0"
-              fluid
-              :disabled="!canEditCost"
-              :invalid="!!fieldError('harga_jual')"
-            />
-            <Message v-if="fieldError('harga_jual')" severity="error" size="small" variant="simple">
-              {{ fieldError('harga_jual') }}
-            </Message>
-          </div>
-        </div>
-
-        <p v-if="!canEditCost" class="text-xs text-fg-muted">
-          Harga modal dan harga jual diisi oleh role yang berwenang.
-        </p>
-      </template>
-
-      <div v-else class="grid gap-4 sm:grid-cols-2">
+      <div class="grid gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5 sm:col-span-2">
           <label for="item-nama" class="text-sm font-medium">
             Nama barang <span class="text-red-500">*</span>
@@ -256,20 +319,32 @@ async function onSubmit() {
           </Message>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <div :class="['grid gap-4', showTkdnPersen ? 'grid-cols-2' : 'grid-cols-1']">
           <div class="flex flex-col gap-1.5">
             <label for="item-tkdn" class="text-sm font-medium">TKDN</label>
-            <InputText id="item-tkdn" v-model="form.tkdn" autocomplete="off" fluid :invalid="!!fieldError('tkdn')" />
+            <Dropdown
+              id="item-tkdn"
+              v-model="form.tkdn"
+              input-id="item-tkdn"
+              :options="TKDN_OPTIONS"
+              option-label="label"
+              option-value="value"
+              placeholder="Pilih TKDN"
+              show-clear
+              fluid
+              :invalid="!!fieldError('tkdn')"
+            />
             <Message v-if="fieldError('tkdn')" severity="error" size="small" variant="simple">
               {{ fieldError('tkdn') }}
             </Message>
           </div>
 
-          <div class="flex flex-col gap-1.5">
+          <div v-if="showTkdnPersen" class="flex flex-col gap-1.5">
             <label for="item-tkdn-persen" class="text-sm font-medium">TKDN (%)</label>
             <InputNumber
               v-model="form.tkdn_persen"
               input-id="item-tkdn-persen"
+              suffix="%"
               :min="0"
               :max="100"
               :max-fraction-digits="2"
@@ -295,6 +370,7 @@ async function onSubmit() {
             :min="1"
             :max-fraction-digits="2"
             fluid
+            :disabled="lockExtra"
             :invalid="!!fieldError('jumlah')"
           />
           <Message v-if="fieldError('jumlah')" severity="error" size="small" variant="simple">
@@ -306,7 +382,7 @@ async function onSubmit() {
           <label for="item-satuan" class="text-sm font-medium">
             Satuan <span class="text-red-500">*</span>
           </label>
-          <InputText id="item-satuan" v-model="form.satuan" autocomplete="off" fluid :invalid="!!fieldError('satuan')" />
+          <InputText id="item-satuan" v-model="form.satuan" autocomplete="off" fluid :disabled="lockExtra" :invalid="!!fieldError('satuan')" />
           <Message v-if="fieldError('satuan')" severity="error" size="small" variant="simple">
             {{ fieldError('satuan') }}
           </Message>
@@ -322,9 +398,67 @@ async function onSubmit() {
 
         <div class="flex flex-col gap-1.5 sm:col-span-2">
           <label for="item-catatan" class="text-sm font-medium">Catatan sales</label>
-          <Textarea id="item-catatan" v-model="form.catatan_sales" rows="2" auto-resize fluid :invalid="!!fieldError('catatan_sales')" />
+          <Textarea id="item-catatan" v-model="form.catatan_sales" rows="2" auto-resize fluid :disabled="lockExtra" :invalid="!!fieldError('catatan_sales')" />
           <Message v-if="fieldError('catatan_sales')" severity="error" size="small" variant="simple">
             {{ fieldError('catatan_sales') }}
+          </Message>
+        </div>
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-medium">Gambar barang</label>
+          <input ref="gambarInput" type="file" accept="image/*" class="hidden" @change="onGambarChange" />
+
+          <div
+            v-if="currentGambar"
+            class="flex h-40 w-full items-center justify-center overflow-hidden rounded-lg border border-line bg-sidebar/50"
+          >
+            <img :src="currentGambar" alt="Gambar barang" class="max-h-full max-w-full object-contain" />
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              :label="currentGambar ? 'Ganti gambar' : 'Pilih gambar'"
+              icon="pi pi-image"
+              size="small"
+              variant="outlined"
+              :disabled="saving"
+              @click="pickGambar"
+            />
+            <Button
+              v-if="gambarFile"
+              type="button"
+              label="Batal pilih"
+              size="small"
+              variant="text"
+              severity="secondary"
+              :disabled="saving"
+              @click="removeGambar"
+            />
+          </div>
+
+          <p v-if="gambarFile" class="truncate text-xs text-fg-muted">{{ gambarFile.name }}</p>
+          <Message v-if="fieldError('gambar')" severity="error" size="small" variant="simple">
+            {{ fieldError('gambar') }}
+          </Message>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label for="item-marketplace" class="text-sm font-medium">Link marketplace</label>
+          <InputText
+            id="item-marketplace"
+            v-model="form.link_marketplace"
+            type="url"
+            placeholder="https://..."
+            autocomplete="off"
+            fluid
+            :disabled="lockExtra"
+            :invalid="!!fieldError('link_marketplace')"
+          />
+          <Message v-if="fieldError('link_marketplace')" severity="error" size="small" variant="simple">
+            {{ fieldError('link_marketplace') }}
           </Message>
         </div>
       </div>
