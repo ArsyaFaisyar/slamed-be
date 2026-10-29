@@ -8,8 +8,8 @@ import 'package:slamed_app/features/rkh/data/models/rkh_update.dart';
 import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
 import 'package:slamed_app/shared/helpers/confirm.dart';
 import 'package:slamed_app/shared/helpers/snackbar.dart';
+import 'package:slamed_app/core/utils/date_picker.dart';
 
-/// Argumen navigasi ke detail RKH.
 class RkhDetailArgs {
   const RkhDetailArgs(this.rkh, this.customerName, this.hasLkh);
   final Rkh rkh;
@@ -72,14 +72,14 @@ class RkhDetailController extends GetxController {
     editing.value = false;
   }
 
-  Future<void> pickDate(BuildContext context) async {
-    final today = DateTime.now();
-    final todayStart = DateTime(today.year, today.month, today.day);
-    final cur = tanggal.value;
-    final first = cur.isBefore(todayStart) ? cur : todayStart;
-    final limit = todayStart.add(const Duration(days: AppConstants.maxHariKeDepan));
-    final last = cur.isAfter(limit) ? cur : limit;
-    final d = await showDatePicker(context: context, initialDate: cur, firstDate: first, lastDate: last);
+      Future<void> pickDate(BuildContext context) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final d = await pickDateInRange(
+      context,
+      initial: tanggal.value,
+      first: today,
+      last: today.add(const Duration(days: AppConstants.maxHariKeDepan)),
+    );
     if (d != null) tanggal.value = d;
   }
 

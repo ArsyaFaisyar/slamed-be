@@ -10,6 +10,7 @@ import 'package:slamed_app/features/project/data/project_repository.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh_create.dart';
 import 'package:slamed_app/features/rkh/data/rkh_repository.dart';
 import 'package:slamed_app/shared/helpers/snackbar.dart';
+import 'package:slamed_app/core/utils/date_picker.dart';
 
 class RkhFormController extends GetxController {
   RkhFormController(this._customerRepo, this._projectRepo, this._rkhRepo);
@@ -73,13 +74,13 @@ class RkhFormController extends GetxController {
     }
   }
 
-  Future<void> pickDate(BuildContext context) async {
-    final today = DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      initialDate: pelaksanaan.value,
-      firstDate: DateTime(today.year, today.month, today.day),
-      lastDate: today.add(const Duration(days: AppConstants.maxHariKeDepan)),
+    Future<void> pickDate(BuildContext context) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final d = await pickDateInRange(
+      context,
+      initial: pelaksanaan.value,
+      first: today,
+      last: today.add(const Duration(days: AppConstants.maxHariKeDepan)),
     );
     if (d != null) pelaksanaan.value = d;
   }

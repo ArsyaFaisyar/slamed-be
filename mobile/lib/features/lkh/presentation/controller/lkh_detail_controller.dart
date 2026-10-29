@@ -18,6 +18,7 @@ import 'package:slamed_app/features/project/data/project_repository.dart';
 import 'package:slamed_app/features/project/domain/project_status_rules.dart';
 import 'package:slamed_app/shared/helpers/confirm.dart';
 import 'package:slamed_app/shared/helpers/snackbar.dart';
+import 'package:slamed_app/core/utils/date_picker.dart';
 
 /// Argumen navigasi ke detail LKH.
 class LkhDetailArgs {
@@ -222,18 +223,14 @@ class LkhDetailController extends GetxController {
     editing.value = false;
   }
 
-  Future<void> pickFollowUp(BuildContext context) async {
-    final t = DateTime.now();
-    final today = DateTime(t.year, t.month, t.day);
-    final cur = followUp.value;
-    final first = (cur != null && cur.isBefore(today)) ? cur : today;
-    var last = today.add(const Duration(days: 365));
-    if (cur != null && cur.isAfter(last)) last = cur;
-    final d = await showDatePicker(
-      context: context,
-      initialDate: cur ?? today.add(const Duration(days: 1)),
-      firstDate: first,
-      lastDate: last,
+    Future<void> pickFollowUp(BuildContext context) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final d = await pickDateInRange(
+      context,
+      initial: followUp.value,
+      fallbackInitial: today.add(const Duration(days: 1)),
+      first: today,
+      last: today.add(const Duration(days: 365)),
     );
     if (d != null) followUp.value = d;
   }
