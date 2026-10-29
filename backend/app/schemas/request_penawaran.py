@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
@@ -10,7 +10,6 @@ class RequestPenawaranCreate(BaseModel):
     media_pengadaan_id: Optional[int] = None
     branch_id: Optional[int] = None
     mode_pagu: str = "DETAIL"
-    pajak_harga_modal: Optional[str] = None
     nama_pic: Optional[str] = None
     nomor_pic: Optional[str] = None
     gambar_path: str | None = None
@@ -21,7 +20,6 @@ class RequestPenawaranUpdate(BaseModel):
     media_pengadaan_id: Optional[int] = None
     branch_id: Optional[int] = None
     mode_pagu: Optional[str] = None
-    pajak_harga_modal: Optional[str] = None
     durasi: Optional[int] = None
     total_pagu: Optional[Decimal] = None
     nama_pic: Optional[str] = None
@@ -37,7 +35,6 @@ class RequestPenawaranResponse(BaseModel):
     media_pengadaan_id: Optional[int] = None
     branch_id: Optional[int] = None
     mode_pagu: str
-    pajak_harga_modal: Optional[str] = None
     status_request: str
     total_pagu: Optional[Decimal] = None
     total_harga_modal: Optional[Decimal] = None
@@ -66,6 +63,10 @@ class RequestPenawaranItemCreate(BaseModel):
     jumlah: Decimal = Decimal("1")
     satuan: str = "Unit"
 
+    gambar_path: Optional[str] = None
+    link_marketplace: Optional[str] = None
+    jenis_pajak: Literal["PAJAK", "NON_PAJAK"] = "PAJAK"
+
 class RequestPenawaranItemUpdate(BaseModel):
     nama_barang: Optional[str] = None
     merk: Optional[str] = None
@@ -75,6 +76,9 @@ class RequestPenawaranItemUpdate(BaseModel):
     catatan_sales: Optional[str] = None
     jumlah: Optional[Decimal] = None
     satuan: Optional[str] = None
+    gambar_path: Optional[str] = None
+    link_marketplace: Optional[str] = None
+    jenis_pajak: Optional[Literal["PAJAK", "NON_PAJAK"]] = None
     harga_pagu: Optional[Decimal] = None
     harga_modal: Optional[Decimal] = None
     harga_jual: Optional[Decimal] = None
@@ -90,6 +94,9 @@ class RequestPenawaranItemResponse(BaseModel):
     catatan_sales: Optional[str] = None
     jumlah: Decimal
     satuan: str
+    gambar_path: Optional[str] = None
+    link_marketplace: Optional[str] = None
+    jenis_pajak: Literal["PAJAK", "NON_PAJAK"] = "PAJAK"
     harga_pagu: Optional[Decimal] = None
     harga_modal: Optional[Decimal] = None
     harga_jual: Optional[Decimal] = None

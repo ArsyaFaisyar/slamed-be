@@ -1,3 +1,4 @@
+
 from sqlalchemy import (
     Column,
     Integer,
@@ -8,9 +9,12 @@ from sqlalchemy import (
 )
 from app.db.database import Base
 
+
 class RevisiPenawaranItem(Base):
     __tablename__ = "revisi_penawaran_items"
+
     id = Column(Integer, primary_key=True, index=True)
+
     revisi_penawaran_id = Column(
         Integer,
         ForeignKey("revisi_penawaran.id", ondelete="CASCADE"),
@@ -27,6 +31,16 @@ class RevisiPenawaranItem(Base):
 
     jumlah = Column(Numeric(12, 2), nullable=False)
     satuan = Column(String(50), nullable=False)
+
+    # Informasi gambar, marketplace, dan pajak per barang
+    gambar_path = Column(String, nullable=True)
+    link_marketplace = Column(String, nullable=True)
+    jenis_pajak = Column(
+        String(20),
+        nullable=False,
+        default="PAJAK",
+        server_default="PAJAK",
+    )
 
     harga_pagu = Column(Numeric(15, 2), nullable=True)
     harga_modal = Column(Numeric(15, 2), nullable=True)

@@ -37,10 +37,6 @@ class RequestPenawaran(Base):
         default="DETAIL",
         server_default="DETAIL",
     )
-    pajak_harga_modal = Column(
-        String(30),
-        nullable=True,
-    )
     status_request = Column(
         String(30),
         nullable=False,

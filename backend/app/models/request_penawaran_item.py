@@ -29,7 +29,12 @@ class RequestPenawaranItem(Base):
     satuan = Column(String(50), nullable=False, default="Unit")
     gambar_path = Column(String, nullable=True)
     link_marketplace = Column(String, nullable=True)
-
+    jenis_pajak = Column(
+        String(20),
+        nullable=False,
+        default="PAJAK",
+        server_default="PAJAK",
+    )
     harga_pagu = Column(Numeric(15, 2), nullable=True)
     harga_modal = Column(Numeric(15, 2), nullable=True)
     harga_jual = Column(Numeric(15, 2), nullable=True)
