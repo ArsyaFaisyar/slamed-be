@@ -259,12 +259,12 @@ def update_request(
     updates = data.model_dump(exclude_unset=True)
 
     if user.role == "SALES":
-        restricted = {"pajak_harga_modal", "total_pagu"}
+        restricted = {"total_pagu"}
 
         if restricted.intersection(updates):
             raise HTTPException(
-                403,
-                "Sales tidak dapat mengubah pajak harga modal atau total pagu",
+                status_code=403,
+                detail="Sales tidak dapat mengubah total pagu",
             )
 
     if "mode_pagu" in updates:
@@ -588,6 +588,9 @@ def minta_revisi_penawaran(
                 catatan_sales=item.catatan_sales,
                 jumlah=item.jumlah,
                 satuan=item.satuan,
+                gambar_path=item.gambar_path,
+                link_marketplace=item.link_marketplace,
+                jenis_pajak=item.jenis_pajak,
                 harga_pagu=item.harga_pagu,
                 harga_modal=item.harga_modal,
                 harga_jual=item.harga_jual,
@@ -665,6 +668,9 @@ def detail_revisi_penawaran(
                 "catatan_sales": item.catatan_sales,
                 "jumlah": item.jumlah,
                 "satuan": item.satuan,
+                "gambar_path": item.gambar_path,
+                "link_marketplace": item.link_marketplace,
+                "jenis_pajak": item.jenis_pajak,
                 "harga_pagu": item.harga_pagu,
                 "harga_modal": item.harga_modal,
                 "harga_jual": item.harga_jual,
@@ -807,6 +813,7 @@ def submit_revisi_penawaran(
     }
 
 
+
 @router.post("/{request_id}/revisi/{revisi_id}/approve")
 def approve_revisi_penawaran(
     request_id: int,
@@ -833,18 +840,64 @@ def approve_revisi_penawaran(
         )
         .first()
     )
-
     if not revisi:
         raise HTTPException(
             status_code=404,
             detail="Revisi penawaran tidak ditemukan",
         )
-
     if revisi.status_revisi != "DIKIRIM":
         raise HTTPException(
             status_code=400,
             detail="Hanya revisi yang sudah dikirim Sales yang dapat disetujui",
         )
+    revisi_items = (
+        db.query(RevisiPenawaranItem)
+        .filter(
+            RevisiPenawaranItem.revisi_penawaran_id == revisi.id
+        )
+        .order_by(RevisiPenawaranItem.id.asc())
+        .all()
+    )
+    request_items = (
+        db.query(RequestPenawaranItem)
+        .filter(
+            RequestPenawaranItem.request_penawaran_id == request.id
+        )
+        .order_by(RequestPenawaranItem.id.asc())
+        .all()
+    )
+    if len(revisi_items) != len(request_items):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Jumlah item revisi berbeda dengan RAB utama. "
+                "Periksa item sebelum menyetujui."
+            ),
+        )
+    fields_to_sync = [
+        "nama_barang",
+        "merk",
+        "tkdn",
+        "tkdn_persen",
+        "spesifikasi",
+        "catatan_sales",
+        "jumlah",
+        "satuan",
+        "gambar_path",
+        "link_marketplace",
+        "jenis_pajak",
+        "harga_pagu",
+        "harga_modal",
+        "harga_jual",
+    ]
+
+    for item_revisi, item_request in zip(revisi_items, request_items):
+        for field in fields_to_sync:
+            setattr(
+                item_request,
+                field,
+                getattr(item_revisi, field),
+            )
 
     revisi.status_revisi = "SELESAI"
     revisi.disetujui_oleh = current_user.id
@@ -915,6 +968,9 @@ def get_riwayat_revisi_penawaran(
                         "spesifikasi": item.spesifikasi,
                         "jumlah": item.jumlah,
                         "satuan": item.satuan,
+                        "gambar_path": item.gambar_path,
+                        "link_marketplace": item.link_marketplace,
+                        "jenis_pajak": item.jenis_pajak,
                         "harga_pagu": item.harga_pagu,
                         "harga_modal": item.harga_modal,
                         "harga_jual": item.harga_jual,
