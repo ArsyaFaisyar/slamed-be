@@ -339,6 +339,8 @@ def create_lkh(
     tanggal_follow_up: date | None = Form(None),
     latitude: float | None = Form(None),
     longitude: float | None = Form(None),
+    status_progres: str = Form("PROSPEK"),
+    
     db: Session = Depends(get_db),
     current_user: User = Depends(
         require_roles("SUPERADMIN", "SPV", "SALES")
@@ -349,10 +351,14 @@ def create_lkh(
     if not rkh:
         raise HTTPException(404, "RKH tidak ditemukan")
 
-    if current_user.role == "SALES" and rkh.sales_id != current_user.id:
-            raise HTTPException(403, "RKH ini bukan tanggung jawabmu")
+    if (
+        current_user.role == "SALES"
+        and rkh.sales_id != current_user.id
+    ):
+        raise HTTPException(
+            403, "RKH ini bukan tanggung jawabmu"
+        )
 
-        # Cek status keterlambatan pengisian LKH
     status_pengisian = get_status_pengisian(rkh)
 
     if (
@@ -364,16 +370,53 @@ def create_lkh(
             detail={
                 "status": "LOCKED_LATE",
                 "message": (
-                    "LKH sudah terkunci. "
-                    "Hanya SPV yang dapat mengisi LKH "
-                    "lebih dari satu hari setelah tanggal rencana."
+                    "LKH sudah terkunci. Hanya SPV yang "
+                    "dapat mengisi LKH lebih dari satu hari "
+                    "setelah tanggal rencana."
                 ),
             },
         )
 
-    if existing:
-        raise HTTPException(409, "RKH ini sudah memiliki laporan kunjungan")
+    existing = (
+        db.query(LKH)
+        .filter(LKH.rkh_id == rkh.id)
+        .first()
+    )
 
+    if existing:
+        raise HTTPException(
+            409,
+            "RKH ini sudah memiliki laporan kunjungan",
+        )
+
+    project = (
+        db.query(ProjectProspek)
+        .filter(ProjectProspek.id == rkh.project_id)
+        .first()
+    )
+
+    if not project:
+        raise HTTPException(
+            404, "Project prospek tidak ditemukan"
+        )
+    progres_diizinkan = {
+        "PROSPEK",
+        "REQUEST_PENAWARAN",
+        "REVISI_PENAWARAN",
+        "ADMINISTRASI_SPK",
+        "LOST",
+    }
+
+    status_progres = status_progres.strip().upper()
+
+    if status_progres not in progres_diizinkan:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Status progres tidak valid",
+                "opsi_diizinkan": sorted(progres_diizinkan),
+            },
+        )
     try:
         laporan = LKH(
             rkh_id=rkh.id,
@@ -387,27 +430,37 @@ def create_lkh(
             latitude=latitude,
             longitude=longitude,
             status_pengisian=status_pengisian,
+            status_progres=status_progres,
         )
 
         db.add(laporan)
+        pipeline_mapping = {
+            "PROSPEK": "Prospek",
+            "REQUEST_PENAWARAN": "Request Penawaran",
+            "REVISI_PENAWARAN": "Revisi Penawaran",
+            "ADMINISTRASI_SPK": "Administrasi SPK",
+            "LOST": "Lost",
+        }
+
+        project.pipeline_status = pipeline_mapping[status_progres]
+        # Perbarui pipeline jika tindak_lanjut adalah kode status.
+        
+
         db.flush()
-        project = (
-            db.query(ProjectProspek)
-            .filter(ProjectProspek.id == rkh.project_id)
-            .first()
+
+        catat_project_log(
+            db=db,
+            project_id=project.id,
+            user_id=current_user.id,
+            aktivitas="Laporan kunjungan dibuat",
+            deskripsi=(
+                f"Laporan kunjungan untuk RKH tanggal "
+                f"{rkh.tanggal_rencana} telah dibuat."
+            ),
         )
-        if project:
-            catat_project_log(
-                db=db,
-                project_id=project.id,
-                user_id=current_user.id,
-                aktivitas="Laporan kunjungan dibuat",
-                deskripsi=(
-                    f"Laporan kunjungan untuk RKH tanggal "
-                    f"{rkh.tanggal_rencana} telah dibuat."
-                ),
-            )
+
         rkh.status = "CLOSED"
+
         db.commit()
         db.refresh(laporan)
 

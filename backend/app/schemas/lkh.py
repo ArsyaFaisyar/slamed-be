@@ -14,6 +14,13 @@ class LKHCreate(BaseModel):
     tanggal_follow_up: Optional[date] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    status_progres: Literal[
+    "PROSPEK",
+    "REQUEST_PENAWARAN",
+    "REVISI_PENAWARAN",
+    "ADMINISTRASI_SPK",
+    "LOST",
+] = "PROSPEK"
 
 
 class LKHUpdate(BaseModel):
@@ -26,7 +33,15 @@ class LKHUpdate(BaseModel):
     longitude: Optional[float] = None
     nama_pic: Optional[str] = None
     nomor_pic: Optional[str] = None
-
+    status_progres: Optional[
+    Literal[
+        "PROSPEK",
+        "REQUEST_PENAWARAN",
+        "REVISI_PENAWARAN",
+        "ADMINISTRASI_SPK",
+        "LOST",
+    ]
+] = None
 
 class LKHResponse(BaseModel):
     id: int
@@ -45,6 +60,7 @@ class LKHResponse(BaseModel):
     updated_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
     status_pengisian: str
+    status_progres: str
     
 class LKHExportSchema(BaseModel):
     id: int

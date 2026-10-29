@@ -50,3 +50,10 @@ class LKH(Base):
         default="ON_TIME",
         server_default="ON_TIME",
     )
+    
+    status_progres = Column(
+    String(30),
+    nullable=False,
+    default="PROSPEK",
+    server_default="PROSPEK",
+)
