@@ -18,25 +18,22 @@ import 'package:slamed_app/features/project/data/project_repository.dart';
 import 'package:slamed_app/features/rkh/data/models/rkh.dart';
 import 'package:slamed_app/shared/helpers/snackbar.dart';
 import 'package:slamed_app/features/project/domain/project_status_rules.dart';
+import 'package:slamed_app/core/utils/date_picker.dart';
 
-/// Argumen navigasi ke form LKH.
 class LkhFormArgs {
   const LkhFormArgs(this.rkh, this.customerName, {this.namaPic, this.nomorPic});
   final Rkh rkh;
   final String customerName;
 
-  /// PIC dari data customer untuk mengisi form otomatis (boleh diubah pengguna).
   final String? namaPic, nomorPic;
 }
 
-/// Bahan untuk mencetak stempel waktu/lokasi di foto (dijalankan di isolate).
 class _StampJob {
   const _StampJob(this.bytes, this.lines);
   final Uint8List bytes;
   final List<String> lines;
 }
 
-/// Mencetak [lines] pada bilah gelap di bawah foto, lalu mengembalikan JPEG.
 Uint8List _stampPhoto(_StampJob job) {
   final decoded = img.decodeImage(job.bytes);
   if (decoded == null) throw const FormatException('Foto tidak dapat dibaca');
@@ -86,22 +83,20 @@ class LkhFormController extends GetxController {
 
   final tanggal = DateTime.now().obs;
   final foto = Rxn<XFile>();
-  final fotoPos = Rxn<Position>(); // lokasi saat foto diambil
+  final fotoPos = Rxn<Position>(); 
   final lampiran = Rxn<PlatformFile>();
-  final lampiranBytes = RxnInt(); // ukuran lampiran, ditampilkan di kartu lampiran
+  final lampiranBytes = RxnInt(); 
   final capturing = false.obs;
   final busy = false.obs;
   final error = RxnString();
 
-  // Status project: dropdown di form, dikirim lewat PATCH /projects/{id} setelah LKH tersimpan.
   final statuses = <ProjectStatus>[].obs;
-  final statusId = RxnInt(); // pilihan saat ini
+  final statusId = RxnInt(); 
   final projectNama = RxnString();
   final loadingStatus = true.obs;
   final statusError = RxnString();
-  int? _currentStatusId; // status project di server
+  int? _currentStatusId; 
 
-  // Agar bisa mengulang unggah tanpa membuat LKH ganda.
   int? _lkhId;
   bool _fotoUploaded = false, _lampiranUploaded = false;
 
@@ -114,7 +109,6 @@ class LkhFormController extends GetxController {
     final args = Get.arguments as LkhFormArgs;
     rkh = args.rkh;
     customerName = args.customerName;
-    // Terisi dari data customer; tetap bisa diubah (yang dikirim adalah isi kolom saat submit).
     namaPic.text = (args.namaPic ?? '').trim();
     nomorPic.text = (args.nomorPic ?? '').trim();
     final now = DateTime.now();
@@ -131,7 +125,6 @@ class LkhFormController extends GetxController {
     super.onClose();
   }
 
-  /// Muat project milik RKH ini (status saat ini) dan daftar status yang tersedia.
   Future<void> _loadStatus() async {
     loadingStatus.value = true;
     statusError.value = null;
@@ -139,7 +132,7 @@ class LkhFormController extends GetxController {
       final project = await _projects.get(rkh.projectId);
       final list = await _projects.statuses();
       final cur = project.statusId;
-      // Status saat ini yang sudah tidak aktif tetap ditampilkan agar dropdown valid.
+
       if (cur != null && !list.any((s) => s.id == cur)) {
         list.add(ProjectStatus(
           id: cur,
@@ -153,7 +146,7 @@ class LkhFormController extends GetxController {
       projectNama.value = project.namaProject;
       _currentStatusId = cur;
       statusId.value = cur;
-            // Status tidak boleh dimundurkan dari status project saat ini.
+
       statuses.assignAll(allowedStatusTargets(all: list, currentId: cur));
     } catch (e) {
       statusError.value = errorMessage(e);
@@ -162,14 +155,18 @@ class LkhFormController extends GetxController {
     }
   }
 
-  Future<void> pickDate(BuildContext context) async {
-    final last = DateTime.now();
-    final first = rkh.tanggalRencana.isAfter(last) ? last : rkh.tanggalRencana;
-    final d = await showDatePicker(context: context, initialDate: tanggal.value, firstDate: first, lastDate: last);
+    Future<void> pickDate(BuildContext context) async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final rencana = DateUtils.dateOnly(rkh.tanggalRencana);
+    final d = await pickDateInRange(
+      context,
+      initial: tanggal.value,
+      first: rencana.isAfter(today) ? today : rencana,
+      last: today,
+    );
     if (d != null) tanggal.value = d;
   }
 
-  /// Memastikan GPS aktif dan izin lokasi ada. Mengembalikan pesan error, atau null jika siap.
   Future<String?> _siapkanLokasi() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       return 'Aktifkan GPS untuk mengambil foto dokumentasi.';
@@ -182,7 +179,6 @@ class LkhFormController extends GetxController {
     return null;
   }
 
-  /// Posisi segar; null bila gagal. Tidak pernah melempar error.
   Future<Position?> _ambilFix() async {
     try {
       return await Geolocator.getCurrentPosition(
@@ -193,10 +189,8 @@ class LkhFormController extends GetxController {
     }
   }
 
-  /// Foto wajib langsung dari kamera, dengan lokasi dan waktu pengambilan tercetak di gambar.
   Future<void> takePhoto() async {
     if (capturing.value) return;
-    // Foto yang sudah terkirim tidak diganti dari sisi app.
     if (_fotoUploaded) {
       showSnack('Foto sudah terkirim dan tidak dapat diganti.');
       return;
@@ -209,7 +203,7 @@ class LkhFormController extends GetxController {
         return;
       }
 
-      final fix = _ambilFix(); // berjalan bersamaan dengan kamera
+      final fix = _ambilFix(); 
       XFile? f;
       try {
         f = await _picker.pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1600);
@@ -223,7 +217,6 @@ class LkhFormController extends GetxController {
       }
       if (f == null) return;
 
-      // Pastikan benar-benar foto baru, bukan berkas lama.
       final umur = DateTime.now().difference(await File(f.path).lastModified());
       if (umur > _maxUsiaFoto) {
         showSnack('Foto harus diambil langsung dengan kamera.');
@@ -275,7 +268,6 @@ class LkhFormController extends GetxController {
       return;
     }
     try {
-      // file_picker v11: pickFiles() static, hasilnya FilePickerResult? (null jika dibatalkan).
       final r = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: AppConstants.ekstensiLampiran,
@@ -304,7 +296,6 @@ class LkhFormController extends GetxController {
     lampiranBytes.value = null;
   }
 
-  /// 409 pada FOTO berarti foto sudah ada di server (mis. respons sebelumnya hilang).
   Future<void> _upload(String path, String jenis) async {
     try {
       await _repo.uploadAttachment(_lkhId!, path, jenis: jenis);
@@ -327,7 +318,7 @@ class LkhFormController extends GetxController {
     error.value = null;
     var step = 'pembuatan LKH';
     try {
-      // 1. Buat LKH (form-urlencoded, tanpa file). Status awal NOT_YET.
+
       if (_lkhId == null) {
         final lkh = await _repo.create(LkhCreate(
           rkhId: rkh.id,
@@ -342,25 +333,22 @@ class LkhFormController extends GetxController {
         ));
         _lkhId = lkh.id;
       }
-      // 2. Unggah foto. Server mengubah status LKH menjadi DONE saat ini berhasil.
       step = 'unggah foto';
       if (!_fotoUploaded) {
         await _upload(foto.value!.path, AppConstants.jenisFoto);
         _fotoUploaded = true;
       }
-      // 3. Lampiran dokumen (opsional).
       step = 'unggah lampiran';
       final l = lampiran.value;
       if (l != null && !_lampiranUploaded) {
         await _upload(l.path!, AppConstants.jenisLampiran);
         _lampiranUploaded = true;
       }
-      // 4. Status project, hanya bila dipilih berbeda dari status saat ini.
       step = 'perubahan status project';
       final target = statusId.value;
       if (target != null && target != _currentStatusId) {
         await _projects.updateStatus(rkh.projectId, target);
-        _currentStatusId = target; // berhasil: tidak diulang saat mengirim lagi
+        _currentStatusId = target; 
       }
       Get.back<bool>(result: true);
     } catch (e, st) {
