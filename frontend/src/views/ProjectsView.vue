@@ -12,6 +12,7 @@ import ProjectFormDialog, {
   type CustomerOption,
   type SalesOption,
 } from '../components/ProjectPage/ProjectFormDialog.vue'
+import ProjectExportDialog from '../components/ProjectPage/ProjectExportDialog.vue'
 
 import {
   deleteProject,
@@ -51,7 +52,6 @@ const loading = ref(false)
 const errorMessage = ref('')
 const actionError = ref('')
 
-// Pencarian, filter (checklist), urutan, dan pagination
 const search = ref('')
 const salesFilter = ref<number[]>([])
 const customerFilter = ref<number[]>([])
@@ -66,6 +66,7 @@ const summaryLoading = ref(false)
 const summaryError = ref(false)
 
 const formVisible = ref(false)
+const exportVisible = ref(false)
 const selectedEdit = ref<Project | null>(null)
 
 const dateFormat = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' })
@@ -75,7 +76,6 @@ const rupiahFormat = new Intl.NumberFormat('id-ID', {
   maximumFractionDigits: 0,
 })
 
-// Hanya customer yang sudah disetujui yang bisa dipilih di form project.
 const customerOptions = computed<CustomerOption[]>(() =>
   customers.value
     .filter(isCustomerApproved)
@@ -167,7 +167,6 @@ const summaryCards = computed(() => {
   ]
 })
 
-// Nilai pipeline_status dari backend: "Prospek" dan "Hot Prospek".
 const PIPELINE_CLASSES: Record<string, string> = {
   Prospek: 'bg-blue-500/10 text-blue-700 dark:text-blue-400',
   'Hot Prospek': 'bg-red-500/10 text-red-700 dark:text-red-400',
@@ -191,15 +190,12 @@ async function fetchSummary() {
   }
 }
 
-/* ---------- Opsi filter (checklist) ---------- */
-
 interface FilterOption {
   value: number
   label: string
   color?: string | null
 }
 
-// Semua sales: dari daftar user (bila boleh diakses) + sales yang muncul di data project.
 const salesFilterOptions = computed<FilterOption[]>(() => {
   const map = new Map<number, string>()
 
@@ -215,7 +211,6 @@ const salesFilterOptions = computed<FilterOption[]>(() => {
     .sort((a, b) => a.label.localeCompare(b.label, 'id'))
 })
 
-// Semua customer: dari daftar customer + customer yang muncul di data project.
 const customerFilterOptions = computed<FilterOption[]>(() => {
   const map = new Map<number, string>()
 
@@ -229,7 +224,6 @@ const customerFilterOptions = computed<FilterOption[]>(() => {
     .sort((a, b) => a.label.localeCompare(b.label, 'id'))
 })
 
-// Semua status project, urut sesuai urutan di Master Status Project.
 const statusFilterOptions = computed<FilterOption[]>(() => {
   const map = new Map<number, FilterOption & { order: number }>()
 
@@ -261,8 +255,6 @@ function resetFilters() {
   customerFilter.value = []
   statusFilter.value = []
 }
-
-/* ---------- Filter, urutan, pagination ---------- */
 
 const filteredProjects = computed(() => {
   const keyword = search.value.trim().toLowerCase()
@@ -303,7 +295,6 @@ function sortValue(project: Project, key: SortKey): number | null {
   return Number.isNaN(time) ? null : time
 }
 
-// Data kosong selalu di paling bawah, apa pun arah urutannya.
 const sortedProjects = computed(() => {
   const key = sortKey.value
   if (!key) return filteredProjects.value
@@ -323,7 +314,6 @@ const sortedProjects = computed(() => {
 
 const pagedProjects = computed(() => sortedProjects.value.slice(first.value, first.value + rows.value))
 
-// Klik judul kolom: naik -> turun -> kembali ke urutan awal.
 function toggleSort(key: SortKey) {
   if (sortKey.value !== key) {
     sortKey.value = key
@@ -346,12 +336,10 @@ function ariaSort(key: SortKey) {
   return sortDir.value === 'asc' ? 'ascending' : 'descending'
 }
 
-// Kembali ke halaman pertama saat pencarian, filter, urutan, atau jumlah per halaman berubah.
 watch([search, salesFilter, customerFilter, statusFilter, sortKey, sortDir, rows], () => {
   first.value = 0
 })
 
-// Kalau data berkurang (mis. setelah hapus) dan halaman saat ini jadi kosong, mundur ke halaman terakhir.
 watch(
   () => filteredProjects.value.length,
   (total) => {
@@ -360,8 +348,6 @@ watch(
     }
   },
 )
-
-/* ---------- Aksi dan data ---------- */
 
 function openCreate() {
   selectedEdit.value = null
@@ -467,7 +453,6 @@ onMounted(() => {
 
     <Message v-if="actionError" severity="error" @close="actionError = ''">{{ actionError }}</Message>
 
-    <!-- Ringkasan di atas tabel -->
     <Message v-if="summaryError" severity="warn" :closable="false">
       <div class="flex flex-wrap items-center gap-3">
         <span>Ringkasan project gagal dimuat.</span>
@@ -487,7 +472,7 @@ onMounted(() => {
           <i :class="card.icon" class="text-fg-muted" />
         </div>
         <p class="mt-2 text-2xl font-semibold tabular-nums">{{ card.value }}</p>
-        <p class="mt-1 text-xs text-fg-muted tabular-nums">{{ card.hint || '\u00A0' }}</p>
+        <p class="mt-1 text-xs text-fg-muted tabular-nums">{{ card.hint || ' ' }}</p>
       </div>
     </div>
 
@@ -579,6 +564,14 @@ onMounted(() => {
             severity="secondary"
             class="whitespace-nowrap"
             @click="resetFilters"
+          />
+
+          <Button
+            label="Export Excel"
+            icon="pi pi-file-excel"
+            size="small"
+            class="whitespace-nowrap !border-[#217346] !bg-[#217346] !text-white hover:!border-[#185C37] hover:!bg-[#185C37]"
+            @click="exportVisible = true"
           />
 
           <Button
@@ -769,6 +762,16 @@ onMounted(() => {
         Total {{ projects.length }} project
       </footer>
     </section>
+
+    <ProjectExportDialog
+      v-model:visible="exportVisible"
+      :sales-options="salesFilterOptions"
+      :customer-options="customerFilterOptions"
+      :status-options="statusFilterOptions"
+      :initial-sales="salesFilter"
+      :initial-customers="customerFilter"
+      :initial-statuses="statusFilter"
+    />
 
     <ProjectFormDialog
       v-model:visible="formVisible"

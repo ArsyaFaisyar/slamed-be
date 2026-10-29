@@ -6,6 +6,12 @@ from app.models.customer import Customer
 from app.models.project_prospek import ProjectProspek
 from app.models.rkh import RKH
 from app.models.user import User
+from app.utils.pipeline_status import (
+    STATUS_REQUEST_PENAWARAN,
+    STATUS_REVISI_PENAWARAN,
+    OPSI_REQUEST_PENAWARAN,
+    OPSI_REVISI_PENAWARAN,
+)
 from app.schemas.rkh import RKHCreate, RKHUpdate, RKHResponse
 from app.core.dependencies import get_current_user, require_roles
 from app.core.roles import RKH_VIEW_ROLES
@@ -122,6 +128,7 @@ def create_rkh(
         db, data.customer_id, data.project_id
     )
 
+    # Validasi kepemilikan customer oleh Sales
     if current_user.role == "SALES":
         if customer.sales_id != current_user.id:
             raise HTTPException(
@@ -129,6 +136,60 @@ def create_rkh(
                 detail="Customer ini bukan tanggung jawabmu",
             )
 
+    # Ambil data prospek
+    project = (
+        db.query(ProjectProspek)
+        .filter(ProjectProspek.id == data.project_id)
+        .first()
+    )
+
+    if not project:
+        raise HTTPException(
+            status_code=404,
+            detail="Project prospek tidak ditemukan",
+        )
+
+     # Normalisasi status pipeline dan tipe aktivitas
+    pipeline_status = (
+        (project.pipeline_status or "")
+        .strip()
+        .upper()
+        .replace(" ", "_")
+    )
+
+    aktivitas = (
+        (data.tipe_aktivitas or "")
+        .strip()
+        .upper()
+        .replace(" ", "_")
+    )
+
+    # Aturan aktivitas berdasarkan pipeline project
+    aturan_aktivitas = {
+        "REQUEST_PENAWARAN": {
+            "FOLLOW_UP_PENAWARAN",
+            "NEGOSIASI",
+            "REVISI_PENAWARAN",
+        },
+        "REVISI_PENAWARAN": {
+            "REVISI_PENAWARAN",
+            "ADMINISTRASI_SPK",
+            "LOST",
+        },
+    }
+
+    opsi_diizinkan = aturan_aktivitas.get(pipeline_status)
+
+    if opsi_diizinkan is not None and aktivitas not in opsi_diizinkan:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Aktivitas RKH tidak sesuai tahap prospek.",
+                "pipeline_status": pipeline_status,
+                "opsi_diizinkan": sorted(opsi_diizinkan),
+            },
+        )
+    # Siapkan data RKH
     rkh_data = data.model_dump()
     rkh_data.pop("sales_id", None)
 
@@ -142,7 +203,6 @@ def create_rkh(
     db.refresh(rkh)
 
     return rkh
-
 
 @router.patch("/{rkh_id}", response_model=RKHResponse)
 def update_rkh(

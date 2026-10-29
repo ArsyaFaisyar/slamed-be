@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 import os
+from decimal import Decimal
 from uuid import uuid4
 from pathlib import Path
 from pydantic import BaseModel, Field, HttpUrl
@@ -49,6 +50,7 @@ ALLOWED_IMAGE_TYPES = {
     "image/webp": ".webp",
 }
 
+
 def refresh_request_completion(db, request):
     items = (
         db.query(RequestPenawaranItem)
@@ -68,7 +70,61 @@ def refresh_request_completion(db, request):
         request.completed_at = datetime.now(timezone.utc)
     elif not semua_harga_lengkap:
         request.completed_at = None
+
+
+def hitung_ulang_total(db: Session, request: RequestPenawaran) -> None:
+    """Hitung ulang total request dari barang-barangnya.
+
+    - total_pagu: hanya barang non-tambahan, dan hanya pada mode DETAIL.
+      Pada mode TOTAL nilai yang diinput manual dipertahankan.
+    - total_harga_modal dan total_harga_jual: semua barang (termasuk tambahan PPIC).
+    """
+    db.flush()
+
+    items = (
+        db.query(RequestPenawaranItem)
+        .filter(RequestPenawaranItem.request_penawaran_id == request.id)
+        .all()
+    )
+
+    def jumlah_harga(kolom: str, termasuk_tambahan: bool) -> Decimal:
+        hasil = Decimal("0")
+        for item in items:
+            if item.is_tambahan and not termasuk_tambahan:
+                continue
+            harga = getattr(item, kolom)
+            if harga is None:
+                continue
+            hasil += (item.jumlah or Decimal("0")) * harga
+        return hasil
+
+    if request.mode_pagu == "DETAIL":
+        request.total_pagu = jumlah_harga("harga_pagu", termasuk_tambahan=False)
+
+    request.total_harga_modal = jumlah_harga("harga_modal", termasuk_tambahan=True)
+    request.total_harga_jual = jumlah_harga("harga_jual", termasuk_tambahan=True)
+
+
 REQUEST_STATUS_KEYS = ("request penawaran", "req penawaran", "penawaran")
+
+# Yang boleh diubah PPIC pada barang input sales.
+PPIC_ITEM_FIELDS = {
+    "nama_barang",
+    "merk",
+    "tkdn",
+    "tkdn_persen",
+    "spesifikasi",
+    "jenis_pajak",
+    "harga_modal",
+}
+
+# Barang tambahan dibuat PPIC sendiri, jadi boleh diubah lebih lengkap.
+PPIC_OWN_ITEM_FIELDS = PPIC_ITEM_FIELDS | {
+    "jumlah",
+    "satuan",
+    "link_marketplace",
+    "gambar_path",
+}
 
 
 def get_request_access(db, request_id, user, write=False):
@@ -94,6 +150,7 @@ def get_request_access(db, request_id, user, write=False):
 
     return request
 
+
 def get_project_from_request(db: Session, request):
     lkh = db.query(LKH).filter(LKH.id == request.lkh_id).first()
     if not lkh:
@@ -106,6 +163,19 @@ def get_project_from_request(db: Session, request):
     return db.query(ProjectProspek).filter(
         ProjectProspek.id == rkh.project_id
     ).first()
+
+
+def get_item_or_404(db: Session, request_id: int, item_id: int):
+    item = db.query(RequestPenawaranItem).filter(
+        RequestPenawaranItem.id == item_id,
+        RequestPenawaranItem.request_penawaran_id == request_id,
+    ).first()
+
+    if not item:
+        raise HTTPException(404, "Item tidak ditemukan")
+
+    return item
+
 
 @router.post("/", response_model=RequestPenawaranResponse, status_code=201)
 def create_request(
@@ -158,14 +228,14 @@ def create_request(
                 status_code=400,
                 detail="Media pengadaan tidak ditemukan",
             )
-    
+
     customer = db.query(Customer).filter(
             Customer.id == project.customer_id
         ).first()
 
     if not customer:
         raise HTTPException(404, "Customer tidak ditemukan")
-    
+
     request_data = data.model_dump()
 
     request_data["nama_pic"] = (
@@ -195,7 +265,7 @@ def create_request(
                 f"{project.nama_project}."
             ),
         )
-        
+
 
         db.commit()
         db.refresh(request)
@@ -269,6 +339,13 @@ def update_request(
                 detail="Sales tidak dapat mengubah total pagu",
             )
 
+    if user.role == "PPIC":
+        # PPIC tidak mengubah data request (media, branch, mode pagu, total pagu).
+        raise HTTPException(
+            status_code=403,
+            detail="PPIC tidak dapat mengubah data request penawaran",
+        )
+
     if "mode_pagu" in updates:
         if updates["mode_pagu"] not in ("DETAIL", "TOTAL"):
             raise HTTPException(
@@ -305,6 +382,8 @@ def update_request(
         setattr(request, field, value)
 
     try:
+        # Pada mode DETAIL, total pagu selalu dihitung dari barang (bukan nilai kiriman).
+        hitung_ulang_total(db, request)
         db.commit()
         db.refresh(request)
         return request
@@ -324,9 +403,15 @@ def get_items(
 ):
     get_request_access(db, request_id, user)
 
-    return db.query(RequestPenawaranItem).filter(
+    query = db.query(RequestPenawaranItem).filter(
         RequestPenawaranItem.request_penawaran_id == request_id
-    ).order_by(RequestPenawaranItem.id.asc()).all()
+    )
+
+    # Barang tambahan PPIC tidak ditampilkan ke Sales.
+    if user.role == "SALES":
+        query = query.filter(RequestPenawaranItem.is_tambahan.is_(False))
+
+    return query.order_by(RequestPenawaranItem.id.asc()).all()
 
 
 @router.post(
@@ -341,9 +426,18 @@ def create_item(
     user: User = Depends(get_current_user),
 ):
     request = get_request_access(db, request_id, user, write=True)
+
+    values = data.model_dump()
+
+    # Barang tambahan: otomatis untuk PPIC; SUPERADMIN/SPV memilihnya dari section harga modal.
+    if user.role == "PPIC":
+        values["is_tambahan"] = True
+    elif user.role == "SALES":
+        values["is_tambahan"] = False
+
     item = RequestPenawaranItem(
         request_penawaran_id=request_id,
-        **data.model_dump(),
+        **values,
     )
     try:
         db.add(item)
@@ -356,9 +450,13 @@ def create_item(
                 project_id=project.id,
                 user_id=user.id,
                 aktivitas="Item Request Penawaran ditambahkan",
-                deskripsi=f"Item baru ditambahkan ke Request Penawaran #{request.id}.",
+                deskripsi=(
+                    f"Item {'tambahan ' if item.is_tambahan else ''}baru ditambahkan "
+                    f"ke Request Penawaran #{request.id}."
+                ),
             )
 
+        hitung_ulang_total(db, request)
         refresh_request_completion(db, request)
         db.commit()
         db.refresh(item)
@@ -389,17 +487,17 @@ def update_item(
     user: User = Depends(get_current_user),
 ):
     request = get_request_access(db, request_id, user, write=True)
-    item = db.query(RequestPenawaranItem).filter(
-        RequestPenawaranItem.id == item_id,
-        RequestPenawaranItem.request_penawaran_id == request_id,
-    ).first()
-
-    if not item:
-        raise HTTPException(404, "Item tidak ditemukan")
+    item = get_item_or_404(db, request_id, item_id)
 
     updates = data.model_dump(exclude_unset=True)
 
     if user.role == "SALES":
+        if item.is_tambahan:
+            raise HTTPException(
+                403,
+                "Sales tidak dapat mengubah barang tambahan dari PPIC",
+            )
+
         restricted = {"harga_modal", "harga_jual"}
 
         if restricted.intersection(updates):
@@ -407,6 +505,28 @@ def update_item(
                 403,
                 "Sales tidak dapat mengubah harga modal atau harga jual",
             )
+
+    if user.role == "PPIC":
+        allowed = PPIC_OWN_ITEM_FIELDS if item.is_tambahan else PPIC_ITEM_FIELDS
+
+        if not allowed.issuperset(updates):
+            raise HTTPException(
+                403,
+                "PPIC hanya dapat mengubah nama, merk, TKDN, spesifikasi, "
+                "gambar, jenis pajak, dan harga modal"
+                + (
+                    " (barang tambahan: juga jumlah, satuan, dan link marketplace)"
+                    if item.is_tambahan
+                    else ""
+                ),
+            )
+
+    # Barang tambahan tidak punya harga pagu (tidak masuk pagu/RAB).
+    if item.is_tambahan and updates.get("harga_pagu") is not None:
+        raise HTTPException(
+            400,
+            "Barang tambahan tidak memiliki harga pagu",
+        )
 
     for field, value in updates.items():
         setattr(item, field, value)
@@ -426,6 +546,7 @@ def update_item(
                     ),
                 )
 
+        hitung_ulang_total(db, request)
         refresh_request_completion(db, request)
         db.commit()
         db.refresh(item)
@@ -458,6 +579,18 @@ def delete_item(
             detail="Item tidak ditemukan dalam Request Penawaran ini.",
         )
 
+    if user.role == "PPIC" and not item.is_tambahan:
+        raise HTTPException(
+            status_code=403,
+            detail="PPIC hanya dapat menghapus barang tambahan yang ia buat",
+        )
+
+    if user.role == "SALES" and item.is_tambahan:
+        raise HTTPException(
+            status_code=403,
+            detail="Sales tidak dapat menghapus barang tambahan dari PPIC",
+        )
+
     try:
         project = get_project_from_request(db, request)
 
@@ -476,6 +609,7 @@ def delete_item(
                 ),
             )
 
+        hitung_ulang_total(db, request)
         refresh_request_completion(db, request)
         db.commit()
 
@@ -1056,6 +1190,7 @@ def approve_revisi_penawaran(
         db.flush()
         refresh_request_completion(db, request)
 
+        hitung_ulang_total(db, request)
         db.commit()
         db.refresh(revisi)
 
@@ -1171,6 +1306,12 @@ def upload_gambar_item(
     if not item:
         raise HTTPException(404, "Item tidak ditemukan")
 
+    if user.role == "SALES" and item.is_tambahan:
+        raise HTTPException(
+            403,
+            "Sales tidak dapat mengubah barang tambahan dari PPIC",
+        )
+
     extension = ALLOWED_IMAGE_TYPES.get(file.content_type)
 
     if not extension:
@@ -1208,7 +1349,6 @@ def upload_gambar_item(
             destination.unlink(missing_ok=True)
             raise
 
-        # Hapus gambar lama setelah path baru berhasil disimpan.
         if old_path:
             old_file = Path(old_path)
             if old_file.is_file() and UPLOAD_DIR.resolve() in old_file.resolve().parents:
@@ -1257,6 +1397,18 @@ def update_link_marketplace(
 
     if not item:
         raise HTTPException(404, "Item tidak ditemukan")
+
+    # PPIC hanya boleh mengubah link pada barang tambahan miliknya; Sales tidak pada barang tambahan.
+    if user.role == "PPIC" and not item.is_tambahan:
+        raise HTTPException(
+            403,
+            "PPIC tidak dapat mengubah link marketplace barang dari Sales",
+        )
+    if user.role == "SALES" and item.is_tambahan:
+        raise HTTPException(
+            403,
+            "Sales tidak dapat mengubah barang tambahan dari PPIC",
+        )
 
     item.link_marketplace = (
         str(data.link_marketplace)

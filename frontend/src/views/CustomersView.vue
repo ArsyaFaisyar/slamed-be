@@ -8,6 +8,7 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { useConfirm } from 'primevue/useconfirm'
 
+import CustomerExportDialog from '../components/CustomerPage/CustomerExportDialog.vue'
 import CustomerFormDialog, {
   type SalesOption,
 } from '../components/CustomerPage/CustomerFormDialog.vue'
@@ -47,6 +48,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const actionError = ref('')
 const formVisible = ref(false)
+const exportVisible = ref(false)
 const selectedEdit = ref<Customer | null>(null)
 
 const isSales = computed(() => auth.user?.role === 'SALES')
@@ -146,6 +148,17 @@ const salesFilterOptions = computed(() =>
 const hasActiveFilters = computed(
   () => !!statusFilter.value || areaFilter.value.length > 0 || salesFilter.value.length > 0,
 )
+
+const exportAreaNames = computed(() => areaFilterOptions.value.map((option) => option.label))
+const exportSalesNames = computed(() => salesFilterOptions.value.map((option) => option.label))
+
+function selectedLabels(selected: number[], options: Array<{ value: number; label: string }>) {
+  return options.filter((option) => selected.includes(option.value)).map((option) => option.label)
+}
+
+const exportInitialAreas = computed(() => selectedLabels(areaFilter.value, areaFilterOptions.value))
+const exportInitialSales = computed(() => selectedLabels(salesFilter.value, salesFilterOptions.value))
+const exportInitialStatuses = computed(() => (statusFilter.value ? [statusFilter.value] : []))
 
 function resetFilters() {
   statusFilter.value = null
@@ -386,6 +399,14 @@ onMounted(() => {
           />
 
           <Button
+            label="Export Excel"
+            icon="pi pi-file-excel"
+            size="small"
+            class="whitespace-nowrap !border-[#217346] !bg-[#217346] !text-white hover:!border-[#185C37] hover:!bg-[#185C37]"
+            @click="exportVisible = true"
+          />
+
+          <Button
             v-if="canCreate"
             :label="isSales ? 'Ajukan customer' : 'Tambah customer'"
             icon="pi pi-plus"
@@ -558,6 +579,15 @@ onMounted(() => {
         Total {{ customers.length }} customer
       </footer>
     </section>
+
+    <CustomerExportDialog
+      v-model:visible="exportVisible"
+      :area-names="exportAreaNames"
+      :sales-names="exportSalesNames"
+      :initial-areas="exportInitialAreas"
+      :initial-sales="exportInitialSales"
+      :initial-statuses="exportInitialStatuses"
+    />
 
     <CustomerFormDialog
       v-model:visible="formVisible"

@@ -2,11 +2,11 @@ import os
 import uuid
 from io import BytesIO
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.utils.lkh_status import get_status_pengisian
@@ -15,6 +15,7 @@ from app.db.database import get_db
 from app.models.rkh import RKH
 from app.models.lkh import LKH
 from app.models.user import User
+from app.models.customer import Customer
 from app.models.project_prospek import ProjectProspek
 from app.models.project_status_history import ProjectStatusHistory
 from app.models.project_status import ProjectStatus
@@ -22,9 +23,116 @@ from app.schemas.lkh import LKHCreate, LKHUpdate, LKHResponse,LKHExportSchema
 from app.core.dependencies import get_current_user, require_roles
 from app.utils.project_log import catat_project_log
 from app.core.roles import LKH_VIEW_ROLES
-from datetime import date
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 router = APIRouter(prefix="/lkh", tags=["LKH"])
+
+WIB = ZoneInfo("Asia/Jakarta")
+
+STATUS_LKH_LABELS = {
+    "NOT_YET": "Open",
+    "DONE": "Done",
+}
+
+STATUS_LKH_STYLES = {
+    "NOT_YET": ("FFF2CC", "7F6000"),
+    "DONE": ("E2EFDA", "375623"),
+}
+
+
+def to_wib(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(WIB).replace(tzinfo=None)
+
+
+def build_lkh_workbook(rows, filter_text, exported_by, exported_at):
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Data LKH"
+
+    headers = [
+        "Tanggal Kunjungan",
+        "Sales",
+        "Customer",
+        "Project",
+        "Kegiatan",
+        "Nama PIC",
+        "Nomor PIC",
+        "Hasil Kunjungan",
+        "Tindak Lanjut",
+        "Tanggal Follow Up",
+        "Status LKH",
+        "Latitude",
+        "Longitude",
+        "Dibuat Pada",
+        "Diperbarui Pada",
+    ]
+
+    worksheet.append(headers)
+
+    for cell in worksheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(
+            fill_type="solid",
+            fgColor="1F4E78",
+        )
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+        )
+
+    for item in rows:
+        lkh = item["lkh"]
+        status = lkh.status_lkh
+
+        worksheet.append([
+            lkh.tanggal_kunjungan,
+            item["sales"],
+            item["customer"],
+            item["project"],
+            item["kegiatan"],
+            lkh.nama_pic,
+            str(lkh.nomor_pic) if lkh.nomor_pic is not None else None,
+            lkh.hasil_kunjungan,
+            lkh.tindak_lanjut,
+            lkh.tanggal_follow_up,
+            STATUS_LKH_LABELS.get(status, status),
+            float(lkh.latitude) if lkh.latitude is not None else None,
+            float(lkh.longitude) if lkh.longitude is not None else None,
+            to_wib(lkh.created_at),
+            to_wib(lkh.updated_at),
+        ])
+
+    for row in worksheet.iter_rows(min_row=2):
+        row[0].number_format = "dd-mm-yyyy"
+        row[6].number_format = "@"
+        row[9].number_format = "dd-mm-yyyy"
+        row[11].number_format = "0.000000"
+        row[12].number_format = "0.000000"
+        row[13].number_format = "dd-mm-yyyy hh:mm:ss"
+        row[14].number_format = "dd-mm-yyyy hh:mm:ss"
+
+    for column_cells in worksheet.columns:
+        max_length = max(
+            len(str(cell.value or ""))
+            for cell in column_cells
+        )
+        column_letter = get_column_letter(
+            column_cells[0].column
+        )
+        worksheet.column_dimensions[
+            column_letter
+        ].width = min(max_length + 3, 40)
+
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+
+    return workbook
+
 
 def get_lkh_query(db: Session, current_user: User):
     query = db.query(LKH)
@@ -64,7 +172,8 @@ def get_lkh(
 
 @router.get("/export/excel")
 def export_lkh_excel(
-    status_lkh: str | None = None,
+    sales_id: list[int] | None = Query(None),
+    customer_id: list[int] | None = Query(None),
     tanggal_mulai: date | None = None,
     tanggal_selesai: date | None = None,
     db: Session = Depends(get_db),
@@ -72,16 +181,6 @@ def export_lkh_excel(
 ):
     query = get_lkh_query(db, current_user)
 
-    # Validasi status
-    if status_lkh is not None:
-        status_lkh = status_lkh.upper()
-        if status_lkh not in ("DONE", "NOT_YET"):
-            raise HTTPException(
-                status_code=400,
-                detail="Status harus DONE atau NOT_YET",
-            )
-
-    # Validasi tanggal
     if (
         tanggal_mulai is not None
         and tanggal_selesai is not None
@@ -92,109 +191,112 @@ def export_lkh_excel(
             detail="Tanggal mulai tidak boleh melebihi tanggal selesai",
         )
 
-    # Filter berdasarkan status
-    if status_lkh is not None:
-        query = query.filter(LKH.status_lkh == status_lkh)
-
-    # Filter berdasarkan tanggal kunjungan
     if tanggal_mulai is not None:
-        query = query.filter(
-            LKH.tanggal_kunjungan >= tanggal_mulai
-        )
+        query = query.filter(LKH.tanggal_kunjungan >= tanggal_mulai)
 
     if tanggal_selesai is not None:
-        query = query.filter(
-            LKH.tanggal_kunjungan <= tanggal_selesai
+        query = query.filter(LKH.tanggal_kunjungan <= tanggal_selesai)
+
+    sales_ids = sorted(set(sales_id or []))
+    if sales_ids:
+        query = query.filter(LKH.sales_id.in_(sales_ids))
+
+    customer_ids = sorted(set(customer_id or []))
+    if customer_ids:
+        query = query.join(RKH, RKH.id == LKH.rkh_id).filter(
+            RKH.customer_id.in_(customer_ids)
         )
 
-    data_lkh = query.order_by(LKH.id.desc()).all()
+    data_lkh = query.order_by(LKH.tanggal_kunjungan.desc(), LKH.id.desc()).all()
 
-    # Buat workbook Excel
-    workbook = Workbook()
-    worksheet = workbook.active
-    worksheet.title = "Data LKH"
+    rkh_map = {}
+    customer_map = {}
+    project_map = {}
+    user_map = {}
 
-    headers = [
-        "Tanggal Kunjungan",
-        "Tanggal Follow Up",
-        "Hasil Kunjungan",
-        "Status LKH",
-        "Tindak Lanjut",
-        "Latitude",
-        "Longitude",
-        "Dibuat Pada",
-        "Diperbarui Pada",
-    ]
+    if data_lkh:
+        rkh_map = {
+            item.id: item
+            for item in db.query(RKH).filter(
+                RKH.id.in_({lkh.rkh_id for lkh in data_lkh})
+            ).all()
+        }
+        customer_ids_in_data = {rkh.customer_id for rkh in rkh_map.values() if rkh.customer_id}
+        project_ids = {rkh.project_id for rkh in rkh_map.values() if rkh.project_id}
+        sales_ids_in_data = {lkh.sales_id for lkh in data_lkh if lkh.sales_id}
 
-    worksheet.append(headers)
+        if customer_ids_in_data:
+            customer_map = {
+                item.id: item.nama_instansi
+                for item in db.query(Customer).filter(Customer.id.in_(customer_ids_in_data)).all()
+            }
+        if project_ids:
+            project_map = {
+                item.id: item.nama_project
+                for item in db.query(ProjectProspek).filter(ProjectProspek.id.in_(project_ids)).all()
+            }
+        if sales_ids_in_data:
+            user_map = {
+                item.id: item.nama
+                for item in db.query(User).filter(User.id.in_(sales_ids_in_data)).all()
+            }
 
-    # Styling header
-    for cell in worksheet[1]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill(
-            fill_type="solid",
-            fgColor="1565C0",
-        )
-        cell.alignment = Alignment(
-            horizontal="center",
-            vertical="center",
-        )
-
-    # Isi data hasil filter
-    for item in data_lkh:
-        worksheet.append([
-            item.tanggal_kunjungan,
-            item.tanggal_follow_up,
-            item.hasil_kunjungan,
-            item.status_lkh,
-            item.tindak_lanjut,
-            float(item.latitude)
-            if item.latitude is not None else None,
-            float(item.longitude)
-            if item.longitude is not None else None,
-            item.created_at.replace(tzinfo=None)
-            if item.created_at else None,
-            item.updated_at.replace(tzinfo=None)
-            if item.updated_at else None,
-        ])
-
-    # Format tanggal
-    for row in worksheet.iter_rows(min_row=2):
-        row[0].number_format = "dd-mm-yyyy"
-        row[1].number_format = "dd-mm-yyyy"
-        row[7].number_format = "dd-mm-yyyy hh:mm:ss"
-        row[8].number_format = "dd-mm-yyyy hh:mm:ss"
-
-        for cell in row:
-            cell.alignment = Alignment(
-                vertical="top",
-                wrap_text=True,
-            )
-
-    # Atur lebar kolom
-    for column_cells in worksheet.columns:
-        column_letter = get_column_letter(
-            column_cells[0].column
+    rows = []
+    for lkh in data_lkh:
+        rkh = rkh_map.get(lkh.rkh_id)
+        rows.append(
+            {
+                "lkh": lkh,
+                "sales": user_map.get(lkh.sales_id),
+                "customer": customer_map.get(rkh.customer_id) if rkh else None,
+                "project": project_map.get(rkh.project_id) if rkh else None,
+                "kegiatan": rkh.judul_kegiatan if rkh else None,
+            }
         )
 
-        max_length = max(
-            len(str(cell.value))
-            if cell.value is not None else 0
-            for cell in column_cells
-        )
+    if tanggal_mulai or tanggal_selesai:
+        mulai_text = tanggal_mulai.strftime("%d-%m-%Y") if tanggal_mulai else "..."
+        selesai_text = tanggal_selesai.strftime("%d-%m-%Y") if tanggal_selesai else "..."
+        periode_text = f"{mulai_text} s/d {selesai_text}"
+    else:
+        periode_text = "Semua"
 
-        worksheet.column_dimensions[column_letter].width = min(
-            max(max_length + 2, 15),
-            40,
-        )
+    sales_text = "Semua"
+    if sales_ids:
+        names = [
+            name
+            for (name,) in db.query(User.nama)
+            .filter(User.id.in_(sales_ids))
+            .order_by(User.nama.asc())
+            .all()
+        ]
+        sales_text = ", ".join(names) or "Semua"
 
-    worksheet.freeze_panes = "A2"
-    worksheet.auto_filter.ref = worksheet.dimensions
+    customer_text = "Semua"
+    if customer_ids:
+        names = [
+            name
+            for (name,) in db.query(Customer.nama_instansi)
+            .filter(Customer.id.in_(customer_ids))
+            .order_by(Customer.nama_instansi.asc())
+            .all()
+        ]
+        customer_text = ", ".join(names) or "Semua"
 
-    # Simpan Excel ke memory
+    filter_text = (
+        f"Sales: {sales_text} | "
+        f"Customer: {customer_text} | "
+        f"Periode kunjungan: {periode_text}"
+    )
+
+    now = datetime.now(WIB)
+    workbook = build_lkh_workbook(rows, filter_text, current_user.nama, now)
+
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
+
+    filename = f"Data_LKH_{now.strftime('%d-%m-%Y_%H%M')}.xlsx"
 
     return StreamingResponse(
         output,
@@ -203,7 +305,7 @@ def export_lkh_excel(
             "spreadsheetml.sheet"
         ),
         headers={
-            "Content-Disposition": 'attachment; filename="data_lkh.xlsx"'
+            "Content-Disposition": f'attachment; filename="{filename}"'
         },
     )
 
@@ -237,6 +339,8 @@ def create_lkh(
     tanggal_follow_up: date | None = Form(None),
     latitude: float | None = Form(None),
     longitude: float | None = Form(None),
+    status_progres: str = Form("PROSPEK"),
+    
     db: Session = Depends(get_db),
     current_user: User = Depends(
         require_roles("SUPERADMIN", "SPV", "SALES")
@@ -247,10 +351,14 @@ def create_lkh(
     if not rkh:
         raise HTTPException(404, "RKH tidak ditemukan")
 
-    if current_user.role == "SALES" and rkh.sales_id != current_user.id:
-            raise HTTPException(403, "RKH ini bukan tanggung jawabmu")
+    if (
+        current_user.role == "SALES"
+        and rkh.sales_id != current_user.id
+    ):
+        raise HTTPException(
+            403, "RKH ini bukan tanggung jawabmu"
+        )
 
-        # Cek status keterlambatan pengisian LKH
     status_pengisian = get_status_pengisian(rkh)
 
     if (
@@ -262,16 +370,53 @@ def create_lkh(
             detail={
                 "status": "LOCKED_LATE",
                 "message": (
-                    "LKH sudah terkunci. "
-                    "Hanya SPV yang dapat mengisi LKH "
-                    "lebih dari satu hari setelah tanggal rencana."
+                    "LKH sudah terkunci. Hanya SPV yang "
+                    "dapat mengisi LKH lebih dari satu hari "
+                    "setelah tanggal rencana."
                 ),
             },
         )
 
-    if existing:
-        raise HTTPException(409, "RKH ini sudah memiliki laporan kunjungan")
+    existing = (
+        db.query(LKH)
+        .filter(LKH.rkh_id == rkh.id)
+        .first()
+    )
 
+    if existing:
+        raise HTTPException(
+            409,
+            "RKH ini sudah memiliki laporan kunjungan",
+        )
+
+    project = (
+        db.query(ProjectProspek)
+        .filter(ProjectProspek.id == rkh.project_id)
+        .first()
+    )
+
+    if not project:
+        raise HTTPException(
+            404, "Project prospek tidak ditemukan"
+        )
+    progres_diizinkan = {
+        "PROSPEK",
+        "REQUEST_PENAWARAN",
+        "REVISI_PENAWARAN",
+        "ADMINISTRASI_SPK",
+        "LOST",
+    }
+
+    status_progres = status_progres.strip().upper()
+
+    if status_progres not in progres_diizinkan:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Status progres tidak valid",
+                "opsi_diizinkan": sorted(progres_diizinkan),
+            },
+        )
     try:
         laporan = LKH(
             rkh_id=rkh.id,
@@ -285,27 +430,37 @@ def create_lkh(
             latitude=latitude,
             longitude=longitude,
             status_pengisian=status_pengisian,
+            status_progres=status_progres,
         )
 
         db.add(laporan)
+        pipeline_mapping = {
+            "PROSPEK": "Prospek",
+            "REQUEST_PENAWARAN": "Request Penawaran",
+            "REVISI_PENAWARAN": "Revisi Penawaran",
+            "ADMINISTRASI_SPK": "Administrasi SPK",
+            "LOST": "Lost",
+        }
+
+        project.pipeline_status = pipeline_mapping[status_progres]
+        # Perbarui pipeline jika tindak_lanjut adalah kode status.
+        
+
         db.flush()
-        project = (
-            db.query(ProjectProspek)
-            .filter(ProjectProspek.id == rkh.project_id)
-            .first()
+
+        catat_project_log(
+            db=db,
+            project_id=project.id,
+            user_id=current_user.id,
+            aktivitas="Laporan kunjungan dibuat",
+            deskripsi=(
+                f"Laporan kunjungan untuk RKH tanggal "
+                f"{rkh.tanggal_rencana} telah dibuat."
+            ),
         )
-        if project:
-            catat_project_log(
-                db=db,
-                project_id=project.id,
-                user_id=current_user.id,
-                aktivitas="Laporan kunjungan dibuat",
-                deskripsi=(
-                    f"Laporan kunjungan untuk RKH tanggal "
-                    f"{rkh.tanggal_rencana} telah dibuat."
-                ),
-            )
+
         rkh.status = "CLOSED"
+
         db.commit()
         db.refresh(laporan)
 
