@@ -11,3 +11,10 @@ export const tipeAktivitasOptions = [
   "Proses Administrasi",
   "Proses penyelesaian administrasi",
 ].map((label) => ({ label, value: label }));
+
+// Setelah sebuah project punya request penawaran, RKH berikutnya hanya boleh memilih tipe ini.
+export const tipeAktivitasSetelahRequest = ["Follow Up Penawaran", "Negosiasi", "Revisi Penawaran"];
+
+export const tipeAktivitasSetelahRequestOptions = tipeAktivitasOptions.filter((option) =>
+  tipeAktivitasSetelahRequest.includes(option.value),
+);

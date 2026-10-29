@@ -9,9 +9,10 @@ import Select from "primevue/select";
 import Button from "primevue/button";
 import Message from "primevue/message";
 import { createRkh } from "../../api/rkh";
-import { tipeAktivitasOptions } from "../../constant/rkh";
+import { tipeAktivitasOptions, tipeAktivitasSetelahRequestOptions } from "../../constant/rkh";
 import { getErrorMessage, getFieldErrors } from "../../utils/error";
 import { toDateString } from "../../utils/date";
+import { getProjectIdsWithRequest } from "../../utils/projectRequest";
 import type { Option, ProjectOption } from "./Types";
 
 const visible = defineModel<boolean>("visible", { default: false });
@@ -69,6 +70,13 @@ const saving = ref(false);
 const formError = ref("");
 const serverErrors = ref<Record<string, string>>({});
 
+// Project yang sudah punya request penawaran: tipe aktivitas RKH berikutnya dibatasi.
+const projectIdsWithRequest = ref<Set<number>>(new Set());
+
+const isRestricted = computed(() => form.project_id !== null && projectIdsWithRequest.value.has(form.project_id));
+
+const tipeOptions = computed(() => (isRestricted.value ? tipeAktivitasSetelahRequestOptions : tipeAktivitasOptions));
+
 const safeCustomerOptions = computed<Option[]>(() =>
   (Array.isArray(props.customerOptions) ? props.customerOptions : [])
     .filter((option) => option && option.value != null && typeof option.label === "string")
@@ -99,6 +107,13 @@ watch(
   },
 );
 
+// Tipe yang sudah dipilih tapi tidak lagi diizinkan (project berganti): kosongkan.
+watch(tipeOptions, (options) => {
+  if (form.tipe_aktivitas && !options.some((option) => option.value === form.tipe_aktivitas)) {
+    form.tipe_aktivitas = null;
+  }
+});
+
 // Tanggal pelaksanaan tidak boleh lebih awal dari tanggal rencana.
 watch(
   () => form.tanggal_rencana,
@@ -128,7 +143,11 @@ const clientErrors = computed<Record<Field, string>>(() => ({
         : "",
   judul_kegiatan: form.judul_kegiatan.trim() ? "" : "Judul kegiatan wajib diisi",
   rencana_kegiatan: form.rencana_kegiatan.trim() ? "" : "Rencana kegiatan wajib diisi",
-  tipe_aktivitas: form.tipe_aktivitas ? "" : "Tipe aktivitas wajib dipilih",
+  tipe_aktivitas: !form.tipe_aktivitas
+    ? "Tipe aktivitas wajib dipilih"
+    : !tipeOptions.value.some((option) => option.value === form.tipe_aktivitas)
+      ? "Tipe aktivitas tidak diizinkan untuk project ini"
+      : "",
   estimasi_biaya_harian: form.estimasi_biaya_harian === null ? "Estimasi biaya wajib diisi" : form.estimasi_biaya_harian < 0 ? "Estimasi biaya tidak boleh negatif" : "",
 }));
 
@@ -144,8 +163,10 @@ function reset() {
   serverErrors.value = {};
 }
 
-watch(visible, (value) => {
-  if (value) reset();
+watch(visible, async (value) => {
+  if (!value) return;
+  reset();
+  projectIdsWithRequest.value = await getProjectIdsWithRequest();
 });
 
 async function onSubmit() {
@@ -271,7 +292,10 @@ async function onSubmit() {
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="flex flex-col gap-1.5">
           <label for="rkh-tipe" class="text-sm font-medium">Tipe aktivitas</label>
-          <Select v-model="form.tipe_aktivitas" input-id="rkh-tipe" :options="tipeAktivitasOptions" option-label="label" option-value="value" placeholder="Pilih tipe" fluid :invalid="!!fieldError('tipe_aktivitas')" />
+          <Select v-model="form.tipe_aktivitas" input-id="rkh-tipe" :options="tipeOptions" option-label="label" option-value="value" placeholder="Pilih tipe" fluid :invalid="!!fieldError('tipe_aktivitas')" />
+          <p v-if="isRestricted" class="text-xs text-fg-muted">
+            Project ini sudah punya request penawaran, jadi pilihan dibatasi ke tahap lanjutan.
+          </p>
           <Message v-if="fieldError('tipe_aktivitas')" severity="error" size="small" variant="simple">
             {{ fieldError("tipe_aktivitas") }}
           </Message>

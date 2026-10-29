@@ -18,7 +18,6 @@ import RevisiPenawaranSection from '../components/RequestPenawaranPage/RevisiPen
 
 import {
   MODE_PAGU_OPTIONS,
-  PAJAK_OPTIONS,
   REQUEST_PENAWARAN_LIST_PATH,
   deleteRequestItem,
   getRequestItems,
@@ -26,6 +25,7 @@ import {
   updateRequestItem,
   updateRequestPenawaran,
   type RequestItem,
+  type RequestItemPriceUpdate,
   type RequestPenawaran,
 } from '../api/requestPenawaran.ts'
 import { getMediaPengadaan, type MediaPengadaan } from '../api/mediaPengadaan.ts'
@@ -40,6 +40,7 @@ import { draftTotal, formatRupiah, toNumber, type Draft } from '../utils/price.t
 
 type PriceField = 'harga_pagu' | 'harga_modal' | 'harga_jual'
 type Section = 'pagu' | 'modal' | 'jual'
+type PajakDraft = Record<number, string | null>
 
 const route = useRoute()
 const router = useRouter()
@@ -49,9 +50,14 @@ const toast = useToast()
 const requestId = computed(() => Number(route.params.requestId))
 const isFirstVisit = computed(() => route.query.baru === '1')
 const canEditCost = computed(() => auth.user?.role !== 'SALES')
+const isPpic = computed(() => auth.user?.role === 'PPIC')
+// Pagu adalah urusan sales: PPIC hanya melihat
+const paguReadonly = isPpic
 
 const request = ref<RequestPenawaran | null>(null)
 const items = ref<RequestItem[]>([])
+// Section pagu hanya menampilkan barang dari sales (bukan barang tambahan)
+const paguItems = computed(() => items.value.filter((item) => !item.is_tambahan))
 const mediaList = ref<MediaPengadaan[]>([])
 const branches = ref<Branch[]>([])
 const projectName = ref('')
@@ -64,6 +70,7 @@ const itemsError = ref('')
 
 const itemDialogVisible = ref(false)
 const selectedItem = ref<RequestItem | null>(null)
+const addAsExtra = ref(false)
 
 const deleteDialogVisible = ref(false)
 const deleteTarget = ref<RequestItem | null>(null)
@@ -77,8 +84,8 @@ const paguDraft = ref<Draft>({})
 const totalPaguDraft = ref<number | null>(null)
 const paguTried = ref(false)
 
-const selectedPajak = ref<string | null>(null)
 const modalDraft = ref<Draft>({})
+const pajakDraft = ref<PajakDraft>({})
 const modalTried = ref(false)
 
 const jualDraft = ref<Draft>({})
@@ -112,8 +119,23 @@ function buildDraft(field: PriceField): Draft {
   return draft
 }
 
+function buildPajakDraft(): PajakDraft {
+  const draft: PajakDraft = {}
+  for (const item of items.value) draft[item.id] = item.jenis_pajak ?? null
+  return draft
+}
+
 function changedItems(draft: Draft, field: PriceField) {
   return items.value.filter((item) => (draft[item.id] ?? null) !== toNumber(item[field]))
+}
+
+// Pagu hanya berlaku untuk barang non-tambahan
+function changedPaguItems() {
+  return paguItems.value.filter((item) => (paguDraft.value[item.id] ?? null) !== toNumber(item.harga_pagu))
+}
+
+function changedPajakItems() {
+  return items.value.filter((item) => (pajakDraft.value[item.id] ?? null) !== (item.jenis_pajak ?? null))
 }
 
 function syncDrafts(section?: Section) {
@@ -128,8 +150,8 @@ function syncDrafts(section?: Section) {
     totalPaguDraft.value = toNumber(data.total_pagu)
   }
   if (!section || section === 'modal') {
-    selectedPajak.value = data.pajak_harga_modal ?? null
     modalDraft.value = buildDraft('harga_modal')
+    pajakDraft.value = buildPajakDraft()
   }
   if (!section || section === 'jual') {
     jualDraft.value = buildDraft('harga_jual')
@@ -137,24 +159,22 @@ function syncDrafts(section?: Section) {
 }
 
 const paguDraftTotal = computed(() =>
-  isPaguTotal.value ? (totalPaguDraft.value ?? 0) : draftTotal(items.value, paguDraft.value),
+  isPaguTotal.value ? (totalPaguDraft.value ?? 0) : draftTotal(paguItems.value, paguDraft.value),
 )
 
 const paguDirty = computed(
   () =>
+    !paguReadonly.value &&
     !!request.value &&
     (selectedMediaId.value !== (request.value.media_pengadaan_id ?? null) ||
       selectedBranchId.value !== (request.value.branch_id ?? null) ||
       modePagu.value !== (request.value.mode_pagu ?? MODE_DETAIL) ||
       (isPaguTotal.value
         ? totalPaguDraft.value !== toNumber(request.value.total_pagu)
-        : changedItems(paguDraft.value, 'harga_pagu').length > 0)),
+        : changedPaguItems().length > 0)),
 )
 const modalDirty = computed(
-  () =>
-    !!request.value &&
-    (selectedPajak.value !== (request.value.pajak_harga_modal ?? null) ||
-      changedItems(modalDraft.value, 'harga_modal').length > 0),
+  () => changedItems(modalDraft.value, 'harga_modal').length > 0 || changedPajakItems().length > 0,
 )
 const jualDirty = computed(() => changedItems(jualDraft.value, 'harga_jual').length > 0)
 
@@ -163,13 +183,16 @@ const paguFormError = computed(() => {
   if (!selectedBranchId.value) return 'Branch/PT wajib dipilih'
   return ''
 })
-const modalFormError = computed(() => (selectedPajak.value ? '' : 'Pajak harga modal wajib dipilih'))
+const modalFormError = computed(() =>
+  items.value.some((item) => !pajakDraft.value[item.id]) ? 'Jenis pajak semua barang wajib dipilih' : '',
+)
 
 function markEdited(state: { error: string }) {
   state.error = ''
 }
 
 function setTotalPagu(value: number | null) {
+  if (paguReadonly.value) return
   if (totalPaguDraft.value === value) return
   totalPaguDraft.value = value
   markEdited(paguState)
@@ -286,7 +309,7 @@ async function runSave(
 
 async function savePagu() {
   const current = request.value
-  if (!current) return
+  if (!current || paguReadonly.value) return
 
   paguTried.value = true
   const mediaId = selectedMediaId.value
@@ -304,7 +327,7 @@ async function savePagu() {
 
     if (!isPaguTotal.value) {
       await Promise.all(
-        changedItems(paguDraft.value, 'harga_pagu').map((item) =>
+        changedPaguItems().map((item) =>
           updateRequestItem(current.id, item.id, { harga_pagu: paguDraft.value[item.id] }),
         ),
       )
@@ -318,16 +341,20 @@ async function saveModal() {
   if (!current || !canEditCost.value) return
 
   modalTried.value = true
-  const pajak = selectedPajak.value
-  if (modalFormError.value || !pajak) return
+  if (modalFormError.value) return
 
   return runSave(modalState, 'modal', 'Harga modal berhasil disimpan', async () => {
-    await updateRequestPenawaran(current.id, { pajak_harga_modal: pajak })
+    const hargaChanged = new Set(changedItems(modalDraft.value, 'harga_modal').map((item) => item.id))
+    const pajakChanged = new Set(changedPajakItems().map((item) => item.id))
+    const targets = items.value.filter((item) => hargaChanged.has(item.id) || pajakChanged.has(item.id))
 
     await Promise.all(
-      changedItems(modalDraft.value, 'harga_modal').map((item) =>
-        updateRequestItem(current.id, item.id, { harga_modal: modalDraft.value[item.id] }),
-      ),
+      targets.map((item) => {
+        const payload: RequestItemPriceUpdate = {}
+        if (hargaChanged.has(item.id)) payload.harga_modal = modalDraft.value[item.id]
+        if (pajakChanged.has(item.id)) payload.jenis_pajak = pajakDraft.value[item.id]
+        return updateRequestItem(current.id, item.id, payload)
+      }),
     )
     modalTried.value = false
   })
@@ -346,12 +373,22 @@ function saveJual() {
   })
 }
 
+// Dari section pagu: barang biasa (masuk pagu/RAB)
 function openAddItem() {
+  addAsExtra.value = false
+  selectedItem.value = null
+  itemDialogVisible.value = true
+}
+
+// Dari section harga modal: barang tambahan (tidak masuk pagu/RAB)
+function openAddExtraItem() {
+  addAsExtra.value = true
   selectedItem.value = null
   itemDialogVisible.value = true
 }
 
 function openEditItem(item: RequestItem) {
+  addAsExtra.value = false
   selectedItem.value = item
   itemDialogVisible.value = true
 }
@@ -379,6 +416,10 @@ async function confirmDelete() {
       delete next[target.id]
       draft.value = next
     }
+
+    const nextPajak = { ...pajakDraft.value }
+    delete nextPajak[target.id]
+    pajakDraft.value = nextPajak
 
     deleteDialogVisible.value = false
     toast.add({ severity: 'success', summary: 'Dihapus', detail: `${target.nama_barang} berhasil dihapus`, life: 2500 })
@@ -445,12 +486,14 @@ function finish() {
               v-model="isPaguTotal"
               input-id="toggle-pagu"
               aria-label="Pilih mode pagu"
+              :disabled="paguReadonly"
               @update:model-value="markEdited(paguState)"
             />
             <span class="text-sm" :class="isPaguTotal ? 'font-semibold' : 'text-fg-muted'">Pagu total</span>
           </div>
 
           <Button
+            v-if="!paguReadonly"
             type="button"
             label="Tambah barang"
             icon="pi pi-plus"
@@ -462,7 +505,10 @@ function finish() {
         </div>
 
         <p class="text-xs text-fg-muted">
-          <template v-if="!isPaguTotal">
+          <template v-if="paguReadonly">
+            Pagu diisi oleh sales. Bagian ini hanya untuk dilihat.
+          </template>
+          <template v-else-if="!isPaguTotal">
             Isi harga pagu per satuan. Subtotal = jumlah × harga pagu, lalu dijumlahkan menjadi total harga pagu.
           </template>
           <template v-else>Mode pagu total: isi total harga pagu langsung, tanpa harga per satuan.</template>
@@ -481,6 +527,7 @@ function finish() {
               size="small"
               filter
               fluid
+              :disabled="paguReadonly"
               :invalid="paguTried && !selectedMediaId"
               empty-message="Daftar media pengadaan tidak tersedia"
               @update:model-value="markEdited(paguState)"
@@ -498,6 +545,7 @@ function finish() {
               size="small"
               filter
               fluid
+              :disabled="paguReadonly"
               :invalid="paguTried && !selectedBranchId"
               empty-message="Daftar branch tidak tersedia"
               @update:model-value="markEdited(paguState)"
@@ -511,20 +559,23 @@ function finish() {
         </div>
 
         <div
-          v-else-if="!itemsError && items.length === 0"
+          v-else-if="!itemsError && paguItems.length === 0"
           class="flex flex-col items-center justify-center gap-2 border-y border-dashed border-line py-12 text-center"
         >
           <i class="pi pi-box text-3xl text-fg-muted" />
           <p class="font-medium">Belum ada barang</p>
-          <p class="text-sm text-fg-muted">Tambahkan barang untuk request penawaran ini.</p>
+          <p class="text-sm text-fg-muted">
+            {{ paguReadonly ? 'Sales belum menambahkan barang.' : 'Tambahkan barang untuk request penawaran ini.' }}
+          </p>
         </div>
 
         <RequestPaguTable
-          v-else-if="items.length > 0"
+          v-else-if="paguItems.length > 0"
           v-model="paguDraft"
-          :items="items"
+          :items="paguItems"
           :show-price="!isPaguTotal"
           :loading="itemsLoading"
+          :readonly="paguReadonly"
           @edited="markEdited(paguState)"
           @edit="openEditItem"
           @delete="openDeleteItem"
@@ -543,6 +594,7 @@ function finish() {
             :min="0"
             placeholder="Total pagu"
             size="small"
+            :disabled="paguReadonly"
             @update:model-value="setTotalPagu"
           />
           <span v-else class="tabular-nums">{{ formatRupiah(paguDraftTotal) }}</span>
@@ -551,7 +603,7 @@ function finish() {
         <Message v-if="paguState.error" severity="error" size="small">{{ paguState.error }}</Message>
         <Message v-else-if="paguTried && paguFormError" severity="warn" size="small">{{ paguFormError }}</Message>
 
-        <div class="flex items-center justify-end gap-3">
+        <div v-if="!paguReadonly" class="flex items-center justify-end gap-3">
           <Button
             type="submit"
             label="Simpan pagu"
@@ -568,39 +620,40 @@ function finish() {
         novalidate
         @submit.prevent="saveModal"
       >
-        <div>
-          <h2 class="font-semibold">Harga modal</h2>
-          <p class="mt-1 text-xs text-fg-muted">
-            Harga modal diisi per barang oleh PPIC atau admin. Item tambahan tidak masuk ke pagu.
-          </p>
-        </div>
-
-        <Message v-if="!canEditCost" severity="info" size="small">
-          Harga modal hanya bisa diisi oleh PPIC atau admin.
-        </Message>
-
-        <div class="flex max-w-sm flex-col gap-1.5">
-          <label for="dt-pajak" class="text-xs text-fg-muted">Pajak harga modal</label>
-          <Select
-            v-model="selectedPajak"
-            input-id="dt-pajak"
-            :options="PAJAK_OPTIONS"
-            option-label="label"
-            option-value="value"
-            placeholder="Pilih pajak"
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 class="font-semibold">Harga modal</h2>
+            <p class="mt-1 text-xs text-fg-muted">
+              Harga modal dan jenis pajak diisi per barang oleh PPIC atau admin. Item tambahan tidak masuk ke pagu.
+            </p>
+          </div>
+          <Button
+            v-if="canEditCost"
+            type="button"
+            label="Tambah barang"
+            icon="pi pi-plus"
             size="small"
-            fluid
-            :disabled="!canEditCost"
-            :invalid="modalTried && !selectedPajak"
-            @update:model-value="markEdited(modalState)"
+            variant="outlined"
+            class="whitespace-nowrap"
+            @click="openAddExtraItem"
           />
         </div>
 
+        <Message v-if="!canEditCost" severity="info" size="small">
+          Harga modal dan jenis pajak hanya bisa diisi oleh PPIC atau admin.
+        </Message>
+
         <RequestModalTable
           v-model="modalDraft"
+          v-model:pajak="pajakDraft"
           :items="items"
           :disabled="!canEditCost"
+          :tried="modalTried"
+          :can-manage="canEditCost"
           @edited="markEdited(modalState)"
+          @add="openAddExtraItem"
+          @edit="openEditItem"
+          @delete="openDeleteItem"
         />
 
         <Message v-if="modalState.error" severity="error" size="small">{{ modalState.error }}</Message>
@@ -675,7 +728,8 @@ function finish() {
         v-model:visible="itemDialogVisible"
         :request-id="request.id"
         :item="selectedItem"
-        :can-edit-cost="canEditCost"
+        :restricted="isPpic"
+        :extra="addAsExtra"
         @saved="onItemSaved"
       />
     </template>
