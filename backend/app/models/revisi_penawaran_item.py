@@ -45,3 +45,10 @@ class RevisiPenawaranItem(Base):
     harga_pagu = Column(Numeric(15, 2), nullable=True)
     harga_modal = Column(Numeric(15, 2), nullable=True)
     harga_jual = Column(Numeric(15, 2), nullable=True)
+
+    jenis_revisi = Column(
+        String(30),
+        nullable=False,
+        default="REVISI_HARGA_BARANG",
+        server_default="REVISI_HARGA_BARANG",
+    )

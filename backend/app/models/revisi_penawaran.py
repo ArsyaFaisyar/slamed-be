@@ -1,4 +1,3 @@
-
 from sqlalchemy import (
     Column,
     Integer,
@@ -21,6 +20,12 @@ class RevisiPenawaran(Base):
         index=True,
     )
     nomor_revisi = Column(Integer, nullable=False)
+    jenis_revisi = Column(
+        String(30),
+        nullable=False,
+        default="REVISI_HARGA_BARANG",
+        server_default="REVISI_HARGA_BARANG",
+    )
 
     alasan_revisi = Column(Text, nullable=False)
     catatan_sales = Column(Text, nullable=True)

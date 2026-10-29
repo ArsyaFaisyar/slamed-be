@@ -1,11 +1,10 @@
-
 from pydantic import BaseModel, Field, HttpUrl
 from decimal import Decimal
 from typing import Literal
 
 
 class RevisiItemUpdate(BaseModel):
-    id: int
+    id: int | None = None
 
     nama_barang: str = Field(min_length=1)
     merk: str | None = None
@@ -28,4 +27,11 @@ class RevisiItemUpdate(BaseModel):
 
 class RevisiPenawaranUpdate(BaseModel):
     catatan_sales: str | None = None
-    items: list[RevisiItemUpdate] = Field(min_length=1)
+    items: list[RevisiItemUpdate] = Field(default_factory=list)
+
+class RevisiPenawaranCreate(BaseModel):
+    alasan_revisi: str = Field(min_length=1)
+    jenis_revisi: Literal[
+        "REVISI_TOTAL",
+        "REVISI_HARGA_BARANG",
+    ]
