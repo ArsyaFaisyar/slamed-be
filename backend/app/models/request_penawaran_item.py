@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    Boolean,
     Column,
     Integer,
     String,
@@ -6,7 +7,8 @@ from sqlalchemy import (
     Numeric,
     ForeignKey,
     DateTime,
-    Date
+    Date,
+    false,
 )
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -34,6 +36,13 @@ class RequestPenawaranItem(Base):
         nullable=False,
         default="PAJAK",
         server_default="PAJAK",
+    )
+    # Barang tambahan dari PPIC/admin: tidak masuk pagu dan RAB
+    is_tambahan = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
     )
     harga_pagu = Column(Numeric(15, 2), nullable=True)
     harga_modal = Column(Numeric(15, 2), nullable=True)
