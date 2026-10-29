@@ -52,8 +52,8 @@ class LKH(Base):
     )
     
     status_progres = Column(
-    String(30),
-    nullable=False,
-    default="PROSPEK",
-    server_default="PROSPEK",
-)
+        String(30),
+        nullable=False,
+        default="PROSPEK",
+        server_default="PROSPEK",
+    )

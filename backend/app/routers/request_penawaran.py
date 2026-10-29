@@ -1211,6 +1211,7 @@ def approve_revisi_penawaran(
         "status_revisi": revisi.status_revisi,
     }
 
+
 @router.get("/{request_id}/revisi")
 def get_riwayat_revisi_penawaran(
     request_id: int,
@@ -1222,6 +1223,7 @@ def get_riwayat_revisi_penawaran(
         request_id=request_id,
         user=current_user,
     )
+
     revisi_list = (
         db.query(RevisiPenawaran)
         .filter(
@@ -1230,56 +1232,85 @@ def get_riwayat_revisi_penawaran(
         .order_by(RevisiPenawaran.nomor_revisi.asc())
         .all()
     )
+
     revisi_dikirim = sum(
         1
         for revisi in revisi_list
-        if revisi.status_revisi in ("DIKIRIM", "SELESAI", "DITOLAK")
+        if revisi.status_revisi in (
+            "DIKIRIM",
+            "SELESAI",
+            "DITOLAK",
+        )
     )
+
+    def serialize_item(item):
+        return {
+            "id": item.id,
+            "nama_barang": item.nama_barang,
+            "merk": item.merk,
+            "tkdn": item.tkdn,
+            "tkdn_persen": item.tkdn_persen,
+            "spesifikasi": item.spesifikasi,
+            "jumlah": item.jumlah,
+            "satuan": item.satuan,
+            "gambar_path": item.gambar_path,
+            "link_marketplace": item.link_marketplace,
+            "jenis_pajak": item.jenis_pajak,
+            "harga_pagu": item.harga_pagu,
+            "harga_modal": item.harga_modal,
+            "harga_jual": item.harga_jual,
+            "catatan_sales": item.catatan_sales,
+        }
+
+    riwayat = []
+
+    for revisi in revisi_list:
+        items = (
+            db.query(RevisiPenawaranItem)
+            .filter(
+                RevisiPenawaranItem.revisi_penawaran_id
+                == revisi.id
+            )
+            .order_by(RevisiPenawaranItem.id.asc())
+            .all()
+        )
+
+        arsip_items = (
+            db.query(RevisiPenawaranArsipItem)
+            .filter(
+                RevisiPenawaranArsipItem.revisi_penawaran_id
+                == revisi.id
+            )
+            .order_by(RevisiPenawaranArsipItem.id.asc())
+            .all()
+        )
+
+        riwayat.append({
+            "id": revisi.id,
+            "nomor_revisi": revisi.nomor_revisi,
+            "jenis_revisi": revisi.jenis_revisi,
+            "alasan_revisi": revisi.alasan_revisi,
+            "catatan_sales": revisi.catatan_sales,
+            "status_revisi": revisi.status_revisi,
+            "diminta_oleh": revisi.diminta_oleh,
+            "dikirim_oleh": revisi.dikirim_oleh,
+            "disetujui_oleh": revisi.disetujui_oleh,
+            "tanggal_diminta": revisi.tanggal_diminta,
+            "tanggal_dikirim": revisi.tanggal_dikirim,
+            "tanggal_disetujui": revisi.tanggal_disetujui,
+            "items": [
+                serialize_item(item) for item in items
+            ],
+            "arsip_items": [
+                serialize_item(item) for item in arsip_items
+            ],
+        })
+
     return {
         "request_penawaran_id": request.id,
         "total_revisi_dikirim": revisi_dikirim,
-        "total_riwayat": len(revisi_list),
-        "riwayat": [
-            {
-                "id": revisi.id,
-                "nomor_revisi": revisi.nomor_revisi,
-                "alasan_revisi": revisi.alasan_revisi,
-                "catatan_sales": revisi.catatan_sales,
-                "status_revisi": revisi.status_revisi,
-                "diminta_oleh": revisi.diminta_oleh,
-                "dikirim_oleh": revisi.dikirim_oleh,
-                "disetujui_oleh": revisi.disetujui_oleh,
-                "tanggal_diminta": revisi.tanggal_diminta,
-                "tanggal_dikirim": revisi.tanggal_dikirim,
-                "tanggal_disetujui": revisi.tanggal_disetujui,
-                "items": [
-                    {
-                        "id": item.id,
-                        "nama_barang": item.nama_barang,
-                        "merk": item.merk,
-                        "spesifikasi": item.spesifikasi,
-                        "jumlah": item.jumlah,
-                        "satuan": item.satuan,
-                        "gambar_path": item.gambar_path,
-                        "link_marketplace": item.link_marketplace,
-                        "jenis_pajak": item.jenis_pajak,
-                        "harga_pagu": item.harga_pagu,
-                        "harga_modal": item.harga_modal,
-                        "harga_jual": item.harga_jual,
-                        "catatan_sales": item.catatan_sales,
-                    }
-                    for item in (
-                        db.query(RevisiPenawaranItem)
-                        .filter(
-                            RevisiPenawaranItem.revisi_penawaran_id
-                            == revisi.id
-                        )
-                        .all()
-                    )
-                ],
-            }
-            for revisi in revisi_list
-        ],
+        "total_riwayat": len(riwayat),
+        "riwayat": riwayat,
     }
 
 @router.post("/{request_id}/items/{item_id}/gambar")
