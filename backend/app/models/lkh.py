@@ -43,3 +43,10 @@ class LKH(Base):
         server_default=func.now(),
         onupdate=func.now()
     )
+    
+    status_pengisian = Column(
+        String(20),
+        nullable=False,
+        default="ON_TIME",
+        server_default="ON_TIME",
+    )

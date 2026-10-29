@@ -9,6 +9,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
+from app.utils.lkh_status import get_status_pengisian
 
 from app.db.database import get_db
 from app.models.rkh import RKH
@@ -247,9 +248,27 @@ def create_lkh(
         raise HTTPException(404, "RKH tidak ditemukan")
 
     if current_user.role == "SALES" and rkh.sales_id != current_user.id:
-        raise HTTPException(403, "RKH ini bukan tanggung jawabmu")
+            raise HTTPException(403, "RKH ini bukan tanggung jawabmu")
 
-    existing = db.query(LKH).filter(LKH.rkh_id == rkh.id).first()
+        # Cek status keterlambatan pengisian LKH
+    status_pengisian = get_status_pengisian(rkh)
+
+    if (
+        status_pengisian == "LOCKED_LATE"
+        and current_user.role != "SPV"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "status": "LOCKED_LATE",
+                "message": (
+                    "LKH sudah terkunci. "
+                    "Hanya SPV yang dapat mengisi LKH "
+                    "lebih dari satu hari setelah tanggal rencana."
+                ),
+            },
+        )
+
     if existing:
         raise HTTPException(409, "RKH ini sudah memiliki laporan kunjungan")
 
@@ -265,6 +284,7 @@ def create_lkh(
             tanggal_follow_up=tanggal_follow_up,
             latitude=latitude,
             longitude=longitude,
+            status_pengisian=status_pengisian,
         )
 
         db.add(laporan)
