@@ -15,3 +15,5 @@ from app.models.request_penawaran import RequestPenawaran
 from app.models.request_penawaran_item import RequestPenawaranItem
 from app.models.project_log import ProjectLog
 from app.models.template_penawaran import TemplatePenawaran
+from app.models.revisi_penawaran import RevisiPenawaran
+from app.models.revisi_penawaran_arsip_item import RevisiPenawaranArsipItem
