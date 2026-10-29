@@ -44,6 +44,7 @@ class LKHResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
+    status_pengisian: str
     
 class LKHExportSchema(BaseModel):
     id: int
